@@ -1,0 +1,7 @@
+requests
+numpy
+faiss-cpu
+sounddevice
+scipy
+faster-whisper
+torch
