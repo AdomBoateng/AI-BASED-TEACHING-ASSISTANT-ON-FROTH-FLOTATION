@@ -1,29 +1,40 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from db.supabase import supabase
+from app.db.supabase import supabase
 
 security = HTTPBearer()
 
-async def admin_guard(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
+def _validate_token(credentials: HTTPAuthorizationCredentials):
+    
     token = credentials.credentials
 
-    # 1. Validate token with Supabase
-    user_response = supabase.auth.get_user(token)
-
-    if not user_response or not user_response.user:
+    try:
+        # 1. Validate token with Supabase
+        user_response = supabase.auth.get_user(token)
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token"
         )
+    
+    if not user_response or not user_response.user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+            
+    return user_response.user
 
-    user = user_response.user
+async def admin_guard(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    user = _validate_token(credentials)
 
     # 2. Fetch user profile (role lives here)
     profile = (
         supabase
-        .table("profiles")
+        .table("users")
         .select("id, role")
         .eq("id", user.id)
         .single()
@@ -48,5 +59,18 @@ async def admin_guard(
     return {
         "id": user.id,
         "role": profile["role"],
+        "email": user.email
+    }
+
+
+async def auth_guard(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    user = _validate_token(credentials)
+
+    # Return minimal trusted context
+    return {
+        "id": user.id,
         "email": user.email
     }

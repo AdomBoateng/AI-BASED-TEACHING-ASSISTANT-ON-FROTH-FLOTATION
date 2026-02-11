@@ -1,10 +1,70 @@
-from db.supabase import supabase
+from app.db.supabase import supabase
 from .parser import parse_document
 from .chunker import chunk_text
 from .embedder import embed_chunks
 from .pinecone import upsert_vectors
 from .normalizer import normalize_sections
 import hashlib
+
+
+def _resolve_default_mode(default_mode: str | None, doc_type: str) -> str:
+    mode_map = {
+        "knowledge": "learn",
+        "assessment": "review",
+        "practice": "practice"
+    }
+    allowed = {"learn", "review", "practice"}
+
+    if not default_mode or default_mode == "default":
+        resolved = mode_map.get(doc_type)
+        if not resolved:
+            raise ValueError(f"Unsupported doc_type: {doc_type}")
+        return resolved
+
+    if default_mode not in allowed:
+        raise ValueError(f"Unsupported default_mode: {default_mode}")
+
+    return default_mode
+
+
+def _resolve_difficulty(difficulty: str | None) -> str:
+    allowed = {"beginner", "intermediate", "advanced"}
+    synonyms = {
+        "easy": "beginner",
+        "medium": "intermediate",
+        "normal": "intermediate",
+        "hard": "advanced"
+    }
+
+    if not difficulty:
+        return "beginner"
+
+    normalized = difficulty.strip().lower()
+    normalized = synonyms.get(normalized, normalized)
+
+    if normalized not in allowed:
+        raise ValueError(f"Unsupported difficulty: {difficulty}")
+
+    return normalized
+
+
+def _resolve_doc_type(doc_type: str | None) -> str:
+    allowed = {"knowledge", "assessment", "practice"}
+    synonyms = {
+        "learn": "knowledge",
+        "review": "assessment"
+    }
+
+    if not doc_type:
+        raise ValueError("doc_type is required")
+
+    normalized = doc_type.strip().lower()
+    normalized = synonyms.get(normalized, normalized)
+
+    if normalized not in allowed:
+        raise ValueError(f"Unsupported doc_type: {doc_type}")
+
+    return normalized
 
 async def ingest_document(
     file,
@@ -14,6 +74,10 @@ async def ingest_document(
     version,
     user_id
 ):
+    doc_type = _resolve_doc_type(doc_type)
+    default_mode = _resolve_default_mode(default_mode, doc_type)
+    difficulty = _resolve_difficulty(difficulty)
+
     # 1. Register document
     doc = supabase.table("documents").insert({
         "title": file.filename,

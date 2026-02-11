@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, Depends
 from .service import ingest_document
-from core.auth import admin_guard
+from app.core.auth import admin_guard
 
 router = APIRouter(prefix="/ingestion", tags=["Ingestion"])
 
