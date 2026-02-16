@@ -23,19 +23,34 @@ router = APIRouter(prefix="/mode-sessions", tags=["Mode Sessions"])
 # Helpers
 # -------------------------
 
-def _ensure_chat_session_ownership(session_id: str, user_id: str):
+def _ensure_chat_session_ownership(session_id: str, user_id: str, default_mode: str = "learn"):
+    """
+    Ensures the chat session exists and belongs to the user.
+    If it doesn't exist, create it (UX-friendly for Swagger testing).
+    """
     supabase = get_supabase()
     s = (
         supabase.table("sessions")
-        .select("id,user_id")
+        .select("id,user_id,prefers_video,current_mode")
         .eq("id", session_id)
-        .single()
         .execute()
     )
+
+    # No rows -> create session
     if not s.data:
-        raise HTTPException(status_code=404, detail="Chat session not found")
-    if s.data["user_id"] != user_id:
+        supabase.table("sessions").insert({
+            "id": session_id,
+            "user_id": user_id,
+            "current_mode": default_mode,
+            "prefers_video": False
+        }).execute()
+        return
+
+    # Multiple rows should never happen, but handle safely
+    row = s.data[0]
+    if row["user_id"] != user_id:
         raise HTTPException(status_code=403, detail="Not allowed")
+
 
 
 def _ensure_mode_session_ownership(mode_session_id: str, user_id: str):
@@ -69,7 +84,7 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
     if mode not in ("practice", "review"):
         raise HTTPException(status_code=400, detail="mode must be practice or review")
 
-    _ensure_chat_session_ownership(payload.session_id, user["id"])
+    _ensure_chat_session_ownership(payload.session_id, user["id"], default_mode=mode)
 
     # Enforced policy: review is always text-only
     response_format = response_format_for_mode(payload.session_id, mode)
@@ -97,6 +112,7 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
         prompt_text = format_review_prompt(item)
 
         supabase.table("session_state").upsert({
+            "session_id": payload.session_id,
             "mode_session_id": mode_session_id,
             "pending_mode": "review",
             "pending_payload": item,
@@ -132,6 +148,7 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
     prompt_text = format_practice_prompt(scenario, step=1)
 
     supabase.table("session_state").upsert({
+        "session_id": payload.session_id,
         "mode_session_id": mode_session_id,
         "pending_mode": "practice",
         "pending_payload": scenario,

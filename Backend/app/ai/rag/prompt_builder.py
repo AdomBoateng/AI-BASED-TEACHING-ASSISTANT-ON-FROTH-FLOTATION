@@ -104,6 +104,7 @@ Rules:
 - Return ONLY the JSON object, no other text
 - Do NOT wrap in markdown code blocks
 - Base your evaluation primarily on the reference material
+- Return ONLY raw JSON. Do NOT wrap in ``` fences. Do NOT include any extra text
 """
 
     else:

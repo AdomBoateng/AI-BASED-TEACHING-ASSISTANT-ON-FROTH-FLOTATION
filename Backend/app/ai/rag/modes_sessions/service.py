@@ -1,24 +1,118 @@
 # app/mode_sessions/service.py
 import json
-from typing import Any, Dict, List, Tuple, Optional
+import re
+from typing import Any, Dict, List, Tuple, Optional, Callable, Awaitable
 
 from app.ai.rag.claude import generate_response
 from app.ai.rag.retriever import retrieve_context
 
 
 # -------------------------
-# Utilities
+# JSON Robust Utilities
 # -------------------------
 
-def _safe_json(text: str) -> Dict[str, Any]:
-    try:
-        return json.loads(text)
-    except Exception as e:
-        raise ValueError(f"Invalid JSON from model: {e}\nRaw:\n{text}")
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 
+def _strip_fences(text: str) -> str:
+    raw = (text or "").strip()
+    m = _JSON_FENCE_RE.search(raw)
+    if m:
+        raw = m.group(1).strip()
+    return raw
+
+def _extract_first_object(raw: str) -> Optional[str]:
+    """
+    Best-effort extraction of the first top-level JSON object using brace balancing.
+    Returns None if it appears truncated.
+    """
+    raw = (raw or "").strip()
+    start = raw.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    in_str = False
+    esc = False
+
+    for i in range(start, len(raw)):
+        ch = raw[i]
+
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+
+        if ch == '"':
+            in_str = True
+            continue
+
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return raw[start:i+1]
+
+    return None  # likely truncated
+
+async def safe_parse_json_with_retry(
+    text: str,
+    regenerate_json_fn: Optional[Callable[[], Awaitable[str]]] = None,
+    label: str = "json",
+) -> Dict[str, Any]:
+    """
+    Robust JSON parsing:
+      - Handles fenced JSON
+      - Handles extra text around JSON by extracting first {...}
+      - If invalid/truncated and regenerate_json_fn provided: retries once
+    """
+    raw = _strip_fences(text)
+
+    # 1) direct parse
+    try:
+        return json.loads(raw)
+    except Exception:
+        pass
+
+    # 2) extract first object
+    obj = _extract_first_object(raw)
+    if obj:
+        try:
+            return json.loads(obj)
+        except Exception:
+            pass
+
+    # 3) retry once (helps when model truncates output)
+    if regenerate_json_fn is not None:
+        retry_text = await regenerate_json_fn()
+        raw2 = _strip_fences(retry_text)
+
+        try:
+            return json.loads(raw2)
+        except Exception:
+            obj2 = _extract_first_object(raw2)
+            if obj2:
+                try:
+                    return json.loads(obj2)
+                except Exception as e:
+                    raise ValueError(f"Invalid {label} JSON after retry: {e}\nRaw:\n{retry_text}")
+
+        raise ValueError(f"Invalid {label} JSON after retry.\nRaw:\n{retry_text}")
+
+    raise ValueError(f"Invalid {label} JSON.\nRaw:\n{text}")
+
+
+# -------------------------
+# Difficulty
+# -------------------------
 
 def adjust_difficulty(current: str, score: float) -> str:
     levels = ["Basic", "Intermediate", "Advanced"]
+    current = (current or "").strip().title()
     if current not in levels:
         current = "Basic"
     idx = levels.index(current)
@@ -32,19 +126,56 @@ def adjust_difficulty(current: str, score: float) -> str:
 
 
 # -------------------------
+# Small helpers to reduce truncation
+# -------------------------
+
+def _ensure_three_guided_questions(scenario: Dict[str, Any]) -> None:
+    gq = scenario.get("guided_questions") or []
+    if not isinstance(gq, list):
+        raise ValueError("Scenario invalid: guided_questions must be a list")
+
+    # Normalize to exactly 3
+    if len(gq) < 3:
+        raise ValueError("Scenario invalid: guided_questions must contain EXACTLY 3 questions")
+    scenario["guided_questions"] = gq[:3]
+
+def _ensure_expected_elements_shape(scenario: Dict[str, Any]) -> None:
+    ee = scenario.get("expected_elements") or []
+    if not isinstance(ee, list):
+        raise ValueError("Scenario invalid: expected_elements must be a list")
+
+    if len(ee) < 3:
+        raise ValueError("Scenario invalid: expected_elements must be length 3 (one list per guided question)")
+    scenario["expected_elements"] = ee[:3]
+
+    # Ensure each inner list is short phrases
+    for i in range(3):
+        inner = scenario["expected_elements"][i]
+        if not isinstance(inner, list):
+            scenario["expected_elements"][i] = []
+            inner = scenario["expected_elements"][i]
+
+        # keep 3-5 bullets max
+        inner = inner[:5]
+        # shorten bullets (avoid paragraphs)
+        cleaned = []
+        for b in inner:
+            s = str(b)
+            s = re.sub(r"\s+", " ", s).strip()
+            # hard cap length
+            if len(s) > 120:
+                s = s[:120].rsplit(" ", 1)[0] + "..."
+            cleaned.append(s)
+        scenario["expected_elements"][i] = cleaned
+
+
+# -------------------------
 # REVIEW GENERATORS
 # -------------------------
 
 async def generate_review_item(session_type: str, difficulty: str) -> Tuple[Dict[str, Any], List[str]]:
-    """
-    Returns (item_json, contexts)
-    item_json schema differs per review type but always includes:
-      - type
-      - difficulty
-      - prompt/question content
-    """
-    session_type = session_type.lower().strip()
-    difficulty = difficulty.strip().title()
+    session_type = (session_type or "").lower().strip()
+    difficulty = (difficulty or "").strip().title() or "Basic"
 
     seed = f"Froth flotation review assessment question type={session_type}, difficulty={difficulty}"
     contexts = retrieve_context(query=seed, mode="review", top_k=6)
@@ -53,7 +184,7 @@ async def generate_review_item(session_type: str, difficulty: str) -> Tuple[Dict
         prompt = f"""
 You are generating a structured MCQ (objectives) review question for froth flotation.
 
-Output JSON ONLY in this schema:
+Return ONLY raw JSON (no markdown, no fences, no extra text) in this schema:
 {{
   "type": "mcq",
   "question_id": "REV-MCQ-XXXX",
@@ -65,46 +196,62 @@ Output JSON ONLY in this schema:
 
 Rules:
 - Base content ONLY on REFERENCE MATERIAL.
-- Do NOT include answer.
+- Do NOT include the answer.
 - Options must be clearly distinct.
-- Keep language clear and exam-like.
+- Keep wording exam-like and concise.
 
 REFERENCE MATERIAL:
 {chr(10).join(contexts)}
 """
-        item = _safe_json(await generate_response(prompt=prompt, mode="review"))
+        raw = generate_response(prompt=prompt, mode="review", task="generate")
+        item = await safe_parse_json_with_retry(
+            raw,
+            regenerate_json_fn=lambda: generate_response(
+                prompt=prompt + "\n\nIMPORTANT: Output ONLY complete raw JSON. Do NOT wrap in markdown. Ensure it is COMPLETE.",
+                mode="review", task="generate"
+            ),
+            label="review_mcq"
+        )
         return item, contexts
 
     if session_type == "fill_blank":
         prompt = f"""
 Generate a fill-in-the-blank review item for froth flotation.
 
-Output JSON ONLY:
+Return ONLY raw JSON (no markdown) in this schema:
 {{
   "type": "fill_blank",
   "item_id": "REV-FB-XXXX",
   "difficulty": "{difficulty}",
   "category": "Surface Chemistry|Reagents|Process Variables|Troubleshooting",
-  "sentence_with_blank": "A sentence with ____ as the blank",
-  "answer_key": null
+  "sentence_with_blank": "A sentence with ____ as the blank"
 }}
 
 Rules:
 - Base ONLY on REFERENCE MATERIAL.
 - Do NOT include the answer.
 - Use exactly ONE blank (____).
+- Keep it short.
 
 REFERENCE MATERIAL:
 {chr(10).join(contexts)}
 """
-        item = _safe_json(await generate_response(prompt=prompt, mode="review"))
+        raw = generate_response(prompt=prompt, mode="review", task="generate")
+        item = await safe_parse_json_with_retry(
+            raw,
+            regenerate_json_fn=lambda: generate_response(
+                prompt=prompt + "\n\nIMPORTANT: Output ONLY complete raw JSON, no markdown, no extra text.",
+                mode="review", task="generate"
+            ),
+            label="review_fill_blank"
+        )
         return item, contexts
 
     if session_type == "flashcard":
         prompt = f"""
 Generate a flashcard review item for froth flotation.
 
-Output JSON ONLY:
+Return ONLY raw JSON (no markdown) in this schema:
 {{
   "type": "flashcard",
   "card_id": "REV-FC-XXXX",
@@ -115,20 +262,28 @@ Output JSON ONLY:
 
 Rules:
 - Base ONLY on REFERENCE MATERIAL.
-- expected_points must be 3-5 items.
+- expected_points must be 3-5 SHORT bullets (max 12 words each).
 - Do NOT include a model answer paragraph.
 
 REFERENCE MATERIAL:
 {chr(10).join(contexts)}
 """
-        item = _safe_json(await generate_response(prompt=prompt, mode="review"))
+        raw = generate_response(prompt=prompt, mode="review", task="generate")
+        item = await safe_parse_json_with_retry(
+            raw,
+            regenerate_json_fn=lambda: generate_response(
+                prompt=prompt + "\n\nIMPORTANT: Output ONLY complete raw JSON, no markdown.",
+                mode="review"
+            ),
+            label="review_flashcard"
+        )
         return item, contexts
 
     # default: short_answer
     prompt = f"""
 Generate a short-answer review question for froth flotation.
 
-Output JSON ONLY:
+Return ONLY raw JSON (no markdown) in this schema:
 {{
   "type": "short_answer",
   "question_id": "REV-SA-XXXX",
@@ -140,24 +295,29 @@ Output JSON ONLY:
 
 Rules:
 - Base ONLY on REFERENCE MATERIAL.
-- expected_points should be 3-6 bullets.
+- expected_points should be 3-6 SHORT bullets (max 12 words each).
 - Do NOT include the answer.
+- Keep wording exam-like and concise.
 
 REFERENCE MATERIAL:
 {chr(10).join(contexts)}
 """
-    item = _safe_json(await generate_response(prompt=prompt, mode="review"))
+    raw = generate_response(prompt=prompt, mode="review", task="generate")
+    item = await safe_parse_json_with_retry(
+        raw,
+        regenerate_json_fn=lambda: generate_response(
+            prompt=prompt + "\n\nIMPORTANT: Output ONLY complete raw JSON, no markdown.",
+            mode="review", task="generate"
+        ),
+        label="review_short_answer"
+    )
     return item, contexts
 
 
 async def evaluate_review_answer(item: Dict[str, Any], student_answer: str, contexts: List[str]) -> Dict[str, Any]:
-    """
-    Returns grading JSON. Uses rubric bands.
-    """
     reference = "\n\n".join(contexts)
     itype = item.get("type")
 
-    # normalize question prompt for evaluation
     if itype == "mcq":
         qtext = item["question"]
         options = item["options"]
@@ -199,7 +359,7 @@ Rules:
 - If answer includes claims not supported by reference, list them.
 - If MCQ: student_answer may be A/B/C/D; infer correctness from reference.
 
-Output JSON ONLY:
+Return ONLY raw JSON:
 {{
   "verdict": "correct|partial|incorrect",
   "score": 0.0,
@@ -210,7 +370,8 @@ Output JSON ONLY:
   "correct_answer": "optional - include if MCQ or fill_blank"
 }}
 """
-    return _safe_json(await generate_response(prompt=prompt, mode="review"))
+    raw = generate_response(prompt=prompt, mode="review", task="evaluate")
+    return await safe_parse_json_with_retry(raw, label="review_evaluation")
 
 
 def format_review_prompt(item: Dict[str, Any]) -> str:
@@ -247,7 +408,6 @@ def format_review_prompt(item: Dict[str, Any]) -> str:
             f"\nExplain the concept in your own words."
         )
 
-    # short answer
     return (
         f"### REVIEW (Short Answer)\n"
         f"Question ID: {item.get('question_id','')}\n"
@@ -262,12 +422,8 @@ def format_review_prompt(item: Dict[str, Any]) -> str:
 # -------------------------
 
 async def generate_practice_scenario(session_type: str, difficulty: str) -> Tuple[Dict[str, Any], List[str]]:
-    """
-    Returns scenario JSON + contexts.
-    Must contain guided_questions list (exactly 3) to satisfy your "A" rule.
-    """
-    session_type = session_type.lower().strip()
-    difficulty = difficulty.strip().title()
+    session_type = (session_type or "").lower().strip()
+    difficulty = (difficulty or "").strip().title() or "Basic"
 
     seed = f"Froth flotation practice scenario type={session_type}, difficulty={difficulty}"
     contexts = retrieve_context(query=seed, mode="practice", top_k=6)
@@ -277,34 +433,51 @@ You are generating a structured PRACTICE scenario for froth flotation.
 Session type: {session_type}
 Difficulty: {difficulty}
 
-Output JSON ONLY in this schema:
+Return ONLY raw JSON (no markdown, no fences, no extra text) in this schema:
 {{
   "type": "{session_type}",
   "scenario_id": "PRAC-XXXX",
   "title": "short title",
   "difficulty": "{difficulty}",
-  "situation": "immersive narrative or plant scenario",
+  "situation": "immersive narrative or plant scenario (max 140 words)",
   "available_data": ["...", "..."],
   "guided_questions": ["Q1", "Q2", "Q3"],
   "expected_elements": [
-    ["elements expected in Q1 answer"],
-    ["elements expected in Q2 answer"],
-    ["elements expected in Q3 answer"]
+    ["short bullet", "short bullet", "short bullet"],
+    ["short bullet", "short bullet", "short bullet"],
+    ["short bullet", "short bullet", "short bullet"]
   ],
-  "key_learning_points": ["...", "..."]
+  "key_learning_points": ["short point", "short point"]
 }}
 
 Rules:
 - Base all technical facts ONLY on REFERENCE MATERIAL.
-- Do NOT invent numeric values unless present in REFERENCE MATERIAL.
-- guided_questions must be EXACTLY 3.
-- expected_elements must be length 3.
-- Keep scenario immersive and realistic for the chosen type.
+- guided_questions MUST be EXACTLY 3.
+- expected_elements MUST be length 3, each inner list 3–5 SHORT bullets.
+- Each expected bullet MUST be <= 16 words. NO long sentences. NO paragraphs.
+- Avoid inventing numeric values unless present in REFERENCE MATERIAL.
+- Keep output concise to avoid truncation.
 
 REFERENCE MATERIAL:
 {chr(10).join(contexts)}
 """
-    scenario = _safe_json(await generate_response(prompt=prompt, mode="practice"))
+    raw = generate_response(prompt=prompt, mode="practice", task="generate")
+    scenario = await safe_parse_json_with_retry(
+        raw,
+        regenerate_json_fn=lambda: generate_response(
+            prompt=prompt + "\n\nIMPORTANT: Output ONLY COMPLETE raw JSON (no markdown). Keep it concise. Ensure all strings are closed.",
+            mode="practice", task="generate"
+        ),
+        label="practice_scenario"
+    )
+
+    # Normalize/validate
+    scenario["type"] = session_type
+    scenario["difficulty"] = difficulty
+    _ensure_three_guided_questions(scenario)
+    _ensure_expected_elements_shape(scenario)
+    _ensure_expected_elements_shape(scenario)  # runs bullet shortening
+
     return scenario, contexts
 
 
@@ -344,7 +517,7 @@ Rules:
 - Be supportive and corrective.
 - List unsupported claims if the student goes beyond reference.
 
-Output JSON ONLY:
+Return ONLY raw JSON:
 {{
   "verdict": "correct|partial|incorrect",
   "score": 0.0,
@@ -353,7 +526,8 @@ Output JSON ONLY:
   "unsupported_claims": ["..."]
 }}
 """
-    return _safe_json(await generate_response(prompt=prompt, mode="review"))
+    raw = generate_response(prompt=prompt, mode="review", task="evaluate")
+    return await safe_parse_json_with_retry(raw, label="practice_evaluation")
 
 
 def format_practice_prompt(scenario: Dict[str, Any], step: int) -> str:

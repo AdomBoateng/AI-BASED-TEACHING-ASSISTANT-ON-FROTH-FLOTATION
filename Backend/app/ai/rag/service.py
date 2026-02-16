@@ -81,6 +81,7 @@ Rules:
 - guided_questions must be EXACTLY 3.
 - expected_elements must match length 3.
 - Do not include answers.
+- Return ONLY raw JSON. Do NOT wrap in ``` fences. Do NOT include any extra text.
 
 REFERENCE MATERIAL:
 {chr(10).join(contexts)}
@@ -141,6 +142,7 @@ Rules:
   "missing_points": ["..."],
   "unsupported_claims": ["..."]
 }}
+- Return ONLY raw JSON. Do NOT wrap in ``` fences. Do NOT include any extra text.
 """
     raw = await generate_response(prompt=prompt, mode="review")  # deterministic
     return _json_only(raw)
@@ -166,6 +168,7 @@ Rules:
 - Base content ONLY on REFERENCE MATERIAL.
 - Do NOT include the answer.
 - Do NOT include grading.
+- Return ONLY raw JSON. Do NOT wrap in ``` fences. Do NOT include any extra text.
 
 REFERENCE MATERIAL:
 {chr(10).join(contexts)}
@@ -221,6 +224,7 @@ Rules:
   "missing_points": ["..."],
   "unsupported_claims": ["..."]
 }}
+- Return ONLY raw JSON. Do NOT wrap in ``` fences. Do NOT include any extra text.
 """
     raw = await generate_response(prompt=prompt, mode="review")
     return _json_only(raw)
