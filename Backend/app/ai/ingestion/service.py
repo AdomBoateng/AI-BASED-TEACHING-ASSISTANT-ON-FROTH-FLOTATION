@@ -1,4 +1,4 @@
-from app.db.supabase import supabase
+from app.db.supabase import get_supabase
 from .parser import parse_document
 from .chunker import chunk_text
 from .embedder import embed_chunks
@@ -77,6 +77,8 @@ async def ingest_document(
     doc_type = _resolve_doc_type(doc_type)
     default_mode = _resolve_default_mode(default_mode, doc_type)
     difficulty = _resolve_difficulty(difficulty)
+
+    supabase = get_supabase()
 
     # 1. Register document
     doc = supabase.table("documents").insert({
