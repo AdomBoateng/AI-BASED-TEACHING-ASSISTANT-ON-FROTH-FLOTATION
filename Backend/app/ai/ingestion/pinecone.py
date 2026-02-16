@@ -2,11 +2,13 @@ import os
 import uuid
 import json
 from pinecone import Pinecone
-from dotenv import load_dotenv
-load_dotenv()
 
-api_key = os.getenv("PINECONE_API_KEY", "pcsk_2ZaVgj_BBNx1fYWU75GjxEhhsqconMbyif8yUbsW9gozpd6tnj9sSqk8f78nHFA1JERKQC")
-index_name = os.getenv("PINECONE_INDEX", "froth-flotation")
+from app.config import load_env
+
+load_env()
+
+api_key = os.getenv("PINECONE_API_KEY")
+index_name = os.getenv("PINECONE_INDEX") or os.getenv("PINECONE_INDEX_NAME")
 
 if not api_key:
     raise RuntimeError("PINECONE_API_KEY is not set")
@@ -20,7 +22,7 @@ available_indexes = pc.list_indexes().names()
 if index_name not in available_indexes:
     raise RuntimeError(
         f"Pinecone index '{index_name}' not found. "
-        "Create it in Pinecone or update PINECONE_INDEX_NAME."
+        "Create it in Pinecone or update PINECONE_INDEX/PINECONE_INDEX_NAME."
     )
 
 index = pc.Index(index_name)
@@ -39,9 +41,12 @@ def upsert_vectors(embeddings, chunks, namespace):
         pid = str(uuid.uuid4())
         ids.append(pid)
         emb = _normalize_embedding(emb)
+        topic = chunk.get("topic")
+        if topic is None:
+            topic = ""
         vectors.append((pid, emb, {
             "mode": chunk["mode"],
-            "topic": chunk.get("topic"),
+            "topic": topic,
             "text": chunk.get("text", "")
         }))
 

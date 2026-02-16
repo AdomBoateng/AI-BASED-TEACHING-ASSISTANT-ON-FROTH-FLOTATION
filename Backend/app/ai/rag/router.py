@@ -1,96 +1,43 @@
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
-from supabase import create_client
-import os
-import json
+from fastapi import APIRouter, Depends, HTTPException
 
-from .service import query_rag
 from app.core.auth import auth_guard
+from app.core.chat_repo import ensure_session, load_memory, log_conversation, response_format_for_mode
+from app.media.video_service import maybe_generate_video
+from app.models.models import RagTurnRequest
+from .service import query_rag
 
 router = APIRouter(prefix="/rag", tags=["RAG"])
 
-supabase = create_client(
-    os.getenv("SUPABASE_URL", "https://fdqilmfldmzqynpvyiql.supabase.co"),
-    os.getenv("SUPABASE_SERVICE_ROLE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkcWlsbWZsZG16cXlucHZ5aXFsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDAwMzI1MywiZXhwIjoyMDg1NTc5MjUzfQ.fzfAQrDACv1J4cItbI2F5Em-D-bAfq_gF-y75jLxmBg")
-)
+@router.post("/turn")
+async def rag_turn(payload: RagTurnRequest, user=Depends(auth_guard)):
+    mode = (payload.mode or "learn").lower().strip()
+    if mode != "learn":
+        raise HTTPException(
+            status_code=400,
+            detail="Practice/Review are handled by /mode-sessions. Use mode='learn' here."
+        )
 
+    ensure_session(payload.session_id, user["id"], current_mode="learn")
+    memory = load_memory(payload.session_id)
 
-# ==========================
-# Request Model
-# ==========================
-
-class QueryRequest(BaseModel):
-    session_id: str
-    message: str
-    mode: str  # learn | practice | review
-    response_format: str  # text | video
-
-
-# ==========================
-# ROUTE
-# ==========================
-
-@router.post("/query")
-async def query(request: QueryRequest, user=Depends(auth_guard)):
-
-    # 1️⃣ Ensure session exists
-    session_check = supabase.table("sessions") \
-        .select("id") \
-        .eq("id", request.session_id) \
-        .execute()
-    
-    if not session_check.data:
-        if request.response_format == "video":
-            # Auto-create session with prefers_video=True if not exist
-            supabase.table("sessions").insert({
-                "id": request.session_id,
-                "user_id": user["id"],
-                "prefers_video": True,
-                "current_mode": request.mode
-            }).execute()
-        else:
-            # Auto-create session with prefers_video=False if not exist
-            supabase.table("sessions").insert({
-                "id": request.session_id,
-                "user_id": user["id"],
-                "prefers_video": False,
-                "current_mode": request.mode
-            }).execute()
-        
-    # 2️⃣ Load memory
-    history = supabase.table("conversations") \
-        .select("user_input, tutor_response") \
-        .eq("session_id", request.session_id) \
-        .order("created_at") \
-        .execute()
-
-    memory = []
-    for row in history.data:
-        memory.append(f"user: {row['user_input']}")
-        memory.append(f"assistant: {row['tutor_response']}")
-
-    # 3️⃣ Run RAG
     result = await query_rag(
-        user_message=request.message,
-        mode=request.mode,
+        user_message=payload.message,
+        mode="learn",
         memory=memory
     )
+    tutor_text = result["response"]
 
-    # 4️⃣ Determine tutor_response content
-    if request.mode == "review":
-        # Keep structured grading internally
-        tutor_response = result  # JSON dict
-    else:
-        tutor_response = result["response"]
+    response_format = response_format_for_mode(payload.session_id, "learn")
+    delivery = await maybe_generate_video(tutor_text, response_format)
 
-    # 5️⃣ Save conversation
-    supabase.table("conversations").insert({
-        "session_id": request.session_id,
-        "user_id": user["id"],
-        "mode": request.mode,
-        "user_input": request.message,
-        "tutor_response": str(tutor_response),
-        "response_format": request.response_format  # text or video
-    }).execute()
+    log_conversation(
+        session_id=payload.session_id,
+        user_id=user["id"],
+        mode="learn",
+        user_input=payload.message,
+        tutor_response=tutor_text,
+        response_format=response_format,
+        video_url=delivery.get("video_url"),
+    )
 
-    return result
+    return {"mode": "learn", "response": tutor_text, **delivery}

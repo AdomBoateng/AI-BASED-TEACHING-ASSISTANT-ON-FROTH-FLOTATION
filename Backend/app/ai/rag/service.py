@@ -1,5 +1,5 @@
 import json
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Tuple, Union
 
 from .retriever import retrieve_context
 from .prompt_builder import build_prompt
@@ -35,6 +35,195 @@ def _safe_json_loads(text: str) -> Dict[str, Any]:
             pass
     
     raise ValueError(f"Could not extract valid JSON from model output. Got: {text[:200]}")
+
+
+def _json_only(text: str) -> Dict[str, Any]:
+    return _safe_json_loads(text)
+
+def adjust_difficulty(current: str | None, score: float) -> str:
+    levels = ["Basic", "Intermediate", "Advanced"]
+    cur = current if current in levels else "Basic"
+    i = levels.index(cur)
+
+    if score >= 0.85 and i < 2:
+        i += 1
+    elif score <= 0.60 and i > 0:
+        i -= 1
+    return levels[i]
+
+async def generate_practice_scenario(memory: List[str] | None = None) -> Tuple[Dict[str, Any], List[str]]:
+    seed = "Generate a structured froth flotation practice scenario in JSON."
+
+    contexts = retrieve_context(query=seed, mode="practice", top_k=6)
+
+    prompt = f"""
+You are generating a structured PRACTICE scenario for froth flotation.
+
+Output JSON ONLY in this schema:
+{{
+  "scenario_id": "PRAC-XXXX",
+  "title": "short title",
+  "difficulty": "Basic|Intermediate|Advanced",
+  "situation": "industrial/plant scenario",
+  "available_data": ["...", "..."],
+  "guided_questions": ["Q1", "Q2", "Q3"],
+  "expected_elements": [
+    ["elements expected in Q1 answer"],
+    ["elements expected in Q2 answer"],
+    ["elements expected in Q3 answer"]
+  ],
+  "key_learning_points": ["...", "..."]
+}}
+
+Rules:
+- Use ONLY information supported by REFERENCE MATERIAL.
+- Do NOT invent numerical values unless present in REFERENCE MATERIAL.
+- guided_questions must be EXACTLY 3.
+- expected_elements must match length 3.
+- Do not include answers.
+
+REFERENCE MATERIAL:
+{chr(10).join(contexts)}
+"""
+    raw = await generate_response(prompt=prompt, mode="practice")
+    scenario = _json_only(raw)
+    return scenario, contexts
+
+def format_practice_prompt(scenario: Dict[str, Any], step: int) -> str:
+    idx = step - 1
+    data_lines = "\n".join([f"- {x}" for x in scenario.get("available_data", [])])
+    question = scenario["guided_questions"][idx]
+
+    return (
+        f"### PRACTICE SCENARIO: {scenario.get('title','')}\n"
+        f"Scenario ID: {scenario.get('scenario_id','')}\n"
+        f"Difficulty: {scenario.get('difficulty','')}\n\n"
+        f"**SITUATION:**\n{scenario.get('situation','')}\n\n"
+        f"**Available Data:**\n{data_lines}\n\n"
+        f"**Guided Question {step}:**\n{question}\n"
+    )
+
+async def evaluate_practice_answer(
+    scenario: Dict[str, Any],
+    step: int,
+    student_answer: str,
+    contexts: List[str],
+) -> Dict[str, Any]:
+    idx = step - 1
+    question = scenario["guided_questions"][idx]
+    expected = scenario["expected_elements"][idx]
+    reference = "\n\n".join(contexts)
+    expected_block = "\n".join([f"- {x}" for x in expected])
+
+    prompt = f"""
+You are evaluating a student's PRACTICE answer on froth flotation.
+
+Question:
+{question}
+
+Student Answer:
+{student_answer}
+
+Expected elements:
+{expected_block}
+
+REFERENCE MATERIAL:
+{reference}
+
+Rules:
+- Grade ONLY using the reference material.
+- List unsupported claims if the student goes beyond the reference.
+- Output JSON ONLY:
+{{
+  "verdict": "correct|partial|incorrect",
+  "score": 0.0,
+  "feedback": "short clear feedback",
+  "missing_points": ["..."],
+  "unsupported_claims": ["..."]
+}}
+"""
+    raw = await generate_response(prompt=prompt, mode="review")  # deterministic
+    return _json_only(raw)
+
+async def generate_review_question(memory: List[str] | None = None, difficulty: str = "Basic") -> Tuple[Dict[str, Any], List[str]]:
+    seed = f"Generate a structured froth flotation assessment question ({difficulty}) in JSON."
+    contexts = retrieve_context(query=seed, mode="review", top_k=6)
+
+    prompt = f"""
+You are generating a structured REVIEW assessment question.
+
+Output JSON ONLY:
+{{
+  "question_id": "REV-XXXX",
+  "difficulty": "Basic|Intermediate|Advanced",
+  "category": "Surface Chemistry|Reagents|Process Variables|Troubleshooting",
+  "question_type": "ShortAnswer",
+  "question": "..."
+}}
+
+Rules:
+- Make difficulty = "{difficulty}" (or closest).
+- Base content ONLY on REFERENCE MATERIAL.
+- Do NOT include the answer.
+- Do NOT include grading.
+
+REFERENCE MATERIAL:
+{chr(10).join(contexts)}
+"""
+    raw = await generate_response(prompt=prompt, mode="review")
+    qobj = _json_only(raw)
+    return qobj, contexts
+
+def format_review_prompt(qobj: Dict[str, Any]) -> str:
+    return (
+        f"### REVIEW ASSESSMENT\n"
+        f"Question ID: {qobj.get('question_id','')}\n"
+        f"Difficulty Level: {qobj.get('difficulty','')}\n"
+        f"Category: {qobj.get('category','')}\n"
+        f"Question Type: {qobj.get('question_type','ShortAnswer')}\n\n"
+        f"**Question:**\n{qobj.get('question','')}\n"
+    )
+
+async def evaluate_review_answer(
+    qobj: Dict[str, Any],
+    student_answer: str,
+    contexts: List[str],
+) -> Dict[str, Any]:
+    reference = "\n\n".join(contexts)
+
+    prompt = f"""
+You are grading a REVIEW answer on froth flotation.
+
+Question:
+{qobj.get('question','')}
+
+Student Answer:
+{student_answer}
+
+REFERENCE MATERIAL:
+{reference}
+
+Rubric bands:
+- Excellent (0.90–1.00)
+- Good (0.75–0.89)
+- Satisfactory (0.60–0.74)
+- Needs Improvement (0.40–0.59)
+- Unsatisfactory (0.00–0.39)
+
+Rules:
+- Grade ONLY using reference material.
+- Output JSON ONLY:
+{{
+  "verdict": "correct|partial|incorrect",
+  "score": 0.0,
+  "rubric_level": "Excellent|Good|Satisfactory|Needs Improvement|Unsatisfactory",
+  "feedback": "...",
+  "missing_points": ["..."],
+  "unsupported_claims": ["..."]
+}}
+"""
+    raw = await generate_response(prompt=prompt, mode="review")
+    return _json_only(raw)
 
 
 async def query_rag(

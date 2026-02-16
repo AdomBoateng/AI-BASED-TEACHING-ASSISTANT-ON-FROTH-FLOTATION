@@ -1,7 +1,13 @@
 from anthropic import Anthropic
 import os
 
-client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", "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"))
+from app.config import load_env
+
+load_env()
+api_key = os.getenv("ANTHROPIC_API_KEY")
+if not api_key:
+    raise RuntimeError("Missing ANTHROPIC_API_KEY environment variable.")
+client = Anthropic(api_key=api_key)
 
 def get_mode_config(mode: str):
     if mode == "learn":

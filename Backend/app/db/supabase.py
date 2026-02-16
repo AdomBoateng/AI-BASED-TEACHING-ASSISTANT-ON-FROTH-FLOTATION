@@ -1,10 +1,20 @@
-from supabase import create_client
+from __future__ import annotations
+
 import os
-from dotenv import load_dotenv
+from supabase import create_client
 
-load_dotenv()
+from app.config import load_env
 
-supabase = create_client(
-    os.getenv("SUPABASE_URL", "https://fdqilmfldmzqynpvyiql.supabase.co"),
-    os.getenv("SUPABASE_SERVICE_ROLE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkcWlsbWZsZG16cXlucHZ5aXFsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDAwMzI1MywiZXhwIjoyMDg1NTc5MjUzfQ.fzfAQrDACv1J4cItbI2F5Em-D-bAfq_gF-y75jLxmBg")
-)
+_supabase = None
+
+def get_supabase():
+    """Singleton Supabase client. Requires env vars; no hardcoded fallbacks."""
+    global _supabase
+    if _supabase is None:
+        load_env()
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        if not url or not key:
+            raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables.")
+        _supabase = create_client(url, key)
+    return _supabase

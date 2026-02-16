@@ -1,40 +1,36 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from app.db.supabase import supabase
+
+from app.db.supabase import get_supabase
 
 security = HTTPBearer()
 
 def _validate_token(credentials: HTTPAuthorizationCredentials):
-    
     token = credentials.credentials
+    supabase = get_supabase()
 
     try:
-        # 1. Validate token with Supabase
         user_response = supabase.auth.get_user(token)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
+            detail="Invalid or expired token",
         )
-    
-    if not user_response or not user_response.user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
-            )
-            
+
+    if not user_response or not getattr(user_response, "user", None):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+
     return user_response.user
 
-async def admin_guard(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-
+async def admin_guard(credentials: HTTPAuthorizationCredentials = Depends(security)):
     user = _validate_token(credentials)
+    supabase = get_supabase()
 
-    # 2. Fetch user profile (role lives here)
     profile = (
-        supabase
-        .table("users")
+        supabase.table("users")
         .select("id, role")
         .eq("id", user.id)
         .single()
@@ -45,32 +41,17 @@ async def admin_guard(
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User profile not found"
+            detail="User profile not found",
         )
 
-    # 3. Role check
     if profile["role"] not in ("admin", "super_admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin privileges required"
+            detail="Admin privileges required",
         )
 
-    # 4. Return minimal trusted context
-    return {
-        "id": user.id,
-        "role": profile["role"],
-        "email": user.email
-    }
+    return {"id": user.id, "role": profile["role"], "email": user.email}
 
-
-async def auth_guard(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-
+async def auth_guard(credentials: HTTPAuthorizationCredentials = Depends(security)):
     user = _validate_token(credentials)
-
-    # Return minimal trusted context
-    return {
-        "id": user.id,
-        "email": user.email
-    }
+    return {"id": user.id, "email": user.email}

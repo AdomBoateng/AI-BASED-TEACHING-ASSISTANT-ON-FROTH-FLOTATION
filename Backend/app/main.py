@@ -4,14 +4,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.ai.ingestion.router import router as ingestion_router
 from app.ai.rag.router import router as rag_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.sessions.router import router as sessions_router  # NEW
+from app.ai.rag.modes_sessions.router import router as mode_sessions_router
+from app.config import load_env
 
+load_env()
 
 app = FastAPI(
     title="Froth Flotation Tutor API",
     version="1.0.0",
 )
 
-# CORS (ok for testing; lock down in prod)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,7 +27,8 @@ app.add_middleware(
 async def health():
     return {"status": "ok"}
 
-# mount routers
-app.include_router(ingestion_router)  # /ingestion/...
-app.include_router(rag_router)        # /rag/...
-app.include_router(auth_router)       # /auth/...
+app.include_router(ingestion_router)
+app.include_router(rag_router)
+app.include_router(auth_router)
+app.include_router(sessions_router)  # NEW
+app.include_router(mode_sessions_router)
