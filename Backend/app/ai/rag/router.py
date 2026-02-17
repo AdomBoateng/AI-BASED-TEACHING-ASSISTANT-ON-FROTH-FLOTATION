@@ -28,7 +28,14 @@ async def rag_turn(payload: RagTurnRequest, user=Depends(auth_guard)):
     tutor_text = result["response"]
 
     response_format = response_format_for_mode(payload.session_id, "learn")
-    delivery = await maybe_generate_video(tutor_text, response_format)
+    delivery = await maybe_generate_video(
+        text=tutor_text,
+        response_format=response_format,
+        user_id=user["id"],
+        session_id=payload.session_id,
+        mode="learn"
+    )
+
 
     log_conversation(
         session_id=payload.session_id,

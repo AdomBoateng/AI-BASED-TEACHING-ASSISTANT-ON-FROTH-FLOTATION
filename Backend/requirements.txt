@@ -18,4 +18,7 @@ pandas
 tabulate
 
 openai
-pinecone
+pinecone 
+elevenlabs 
+boto3 
+requests

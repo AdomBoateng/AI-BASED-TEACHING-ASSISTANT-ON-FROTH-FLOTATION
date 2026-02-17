@@ -21,6 +21,7 @@ class ModeSessionTurnRequest(BaseModel):
 
 class VideoToggle(BaseModel):
     prefers_video: bool
+    
 
 
 class SignUpPayload(BaseModel):
@@ -36,3 +37,6 @@ class LoginPayload(BaseModel):
 class ForgotPasswordPayload(BaseModel):
     email: EmailStr
     redirect_to: str | None = None
+
+class AvatarSelectRequest(BaseModel):
+    avatar_id: str  # "amy" | "josh"

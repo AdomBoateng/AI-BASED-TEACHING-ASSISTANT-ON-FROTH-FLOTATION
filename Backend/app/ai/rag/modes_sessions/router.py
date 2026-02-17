@@ -251,7 +251,14 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
             f"Feedback: {eval_out['feedback']}"
         )
 
-        delivery_eval = await maybe_generate_video(feedback_text, response_format)
+        delivery_eval = await maybe_generate_video(
+            text=feedback_text,
+            response_format=response_format,
+            user_id=user["id"],
+            session_id=session_id,
+            mode=mode
+        )
+
 
         log_conversation(
             session_id=session_id,
@@ -271,7 +278,13 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
             supabase.table("session_state").update({"step": next_step}).eq("mode_session_id", mode_session_id).execute()
             supabase.table("mode_sessions").update({"current_item": next_step}).eq("id", mode_session_id).execute()
 
-            delivery_next = await maybe_generate_video(next_prompt, response_format)
+            delivery_next = await maybe_generate_video(
+                text=next_prompt,
+                response_format=response_format,
+                user_id=user["id"],
+                session_id=session_id,
+                mode=mode
+            )
 
             log_conversation(
                 session_id=session_id,
@@ -296,7 +309,13 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
         key_points = pending_payload.get("key_learning_points", [])
         key_text = "Key Learning Points: " + " | ".join(key_points) if key_points else "Practice scenario completed."
 
-        delivery_key = await maybe_generate_video(key_text, response_format)
+        delivery_key = await maybe_generate_video(
+                text=key_text,
+                response_format=response_format,
+                user_id=user["id"],
+                session_id=session_id,
+                mode=mode
+            )
 
         log_conversation(
             session_id=session_id,
