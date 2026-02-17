@@ -1,66 +1,136 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useChatStore } from '@/store/chatStore';
 import { useUIStore } from '@/store/uiStore';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { Sidebar } from '@/components/sidebar/Sidebar';
 import { Header } from '@/components/common/Header';
 import { MessageList } from './MessageList';
 import { InputArea } from './InputArea';
-import { LoadingState } from './LoadingState';
+import { useChat } from '@/hooks/use-chat';
+import { BookOpen, FlaskConical, ClipboardCheck, Zap } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+const QUICK_STARTS = [
+  'What is froth flotation and how does it work?',
+  'Explain the role of collectors in flotation.',
+  'How does pH affect flotation performance?',
+  'What causes froth instability?',
+];
 
 export function ChatContainer() {
   const [mounted, setMounted] = useState(false);
-  const sidebarOpen = useUIStore((state) => state.sidebarOpen);
-  const isGeneratingVideo = useChatStore((state) => state.isGeneratingVideo);
-  const currentConversationId = useChatStore((state) => state.currentConversationId);
+  const sidebarOpen = useUIStore((s) => s.sidebarOpen);
+  const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
+  const currentSessionId = useChatStore((s) => s.currentSessionId);
+  const isMobile = useIsMobile();
+  const { sendMessage } = useChat();
 
   useEffect(() => {
     setMounted(true);
-  }, []);
+    // On mobile, default sidebar to closed
+    if (isMobile) setSidebarOpen(false);
+  }, []); // eslint-disable-line
 
   if (!mounted) return null;
 
+  const showWelcome = !currentSessionId;
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      {/* Sidebar */}
-      <div
-        className={`transition-all duration-300 ease-in-out ${
-          sidebarOpen ? 'w-64' : 'w-0'
-        } border-r border-border`}
-      >
-        {sidebarOpen && <Sidebar />}
-      </div>
 
-      {/* Main Chat Area */}
-      <div className="flex flex-1 flex-col">
-        {/* Header */}
+      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
+      {/* Mobile overlay */}
+      {isMobile && sidebarOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/50"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`
+          flex-shrink-0 overflow-hidden border-r border-border/40
+          transition-[width] duration-300 ease-in-out
+          ${isMobile ? 'fixed left-0 top-0 h-full z-30' : 'relative'}
+          ${sidebarOpen ? 'w-60' : 'w-0'}
+        `}
+      >
+        {/* Always render sidebar so transitions are smooth — hide content when closed */}
+        <div className={`h-full w-60 transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+          <Sidebar />
+        </div>
+      </aside>
+
+      {/* ── Main area ───────────────────────────────────────────────────── */}
+      <main className="flex flex-1 flex-col min-w-0 overflow-hidden">
         <Header />
 
-        {/* Messages Area */}
-        <div className="flex-1 overflow-hidden">
-          {currentConversationId ? (
-            <div className="flex h-full flex-col">
-              <MessageList />
-              {isGeneratingVideo && <LoadingState />}
-            </div>
-          ) : (
-            <div className="flex h-full items-center justify-center">
-              <div className="text-center">
-                <h1 className="text-3xl font-bold text-foreground mb-2">
-                  Welcome to Meraki
-                </h1>
-                <p className="text-muted-foreground">
-                  Start a new conversation to begin learning with AI-powered video responses.
+        {showWelcome ? (
+          /* ── Welcome / empty state ─────────────────────────────────── */
+          <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 overflow-y-auto">
+            <div className="w-full max-w-xl text-center">
+              {/* Icon */}
+              <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20">
+                <BookOpen className="h-8 w-8 text-primary" />
+              </div>
+
+              <h1 className="text-2xl font-bold text-foreground tracking-tight">
+                Welcome to Meraki
+              </h1>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+                Your AI tutor for froth flotation. Ask questions, work through scenarios, or test your knowledge.
+              </p>
+
+              {/* Modes */}
+              <div className="mt-8 grid grid-cols-3 gap-3">
+                {[
+                  { icon: BookOpen, label: 'Learn', desc: 'Explanations & concepts', color: 'text-blue-400' },
+                  { icon: FlaskConical, label: 'Practice', desc: 'Work through scenarios', color: 'text-emerald-400' },
+                  { icon: ClipboardCheck, label: 'Review', desc: 'Test your knowledge', color: 'text-amber-400' },
+                ].map(({ icon: Icon, label, desc, color }) => (
+                  <div
+                    key={label}
+                    className="flex flex-col items-center gap-2 rounded-xl border border-border/50 bg-card p-4 text-center"
+                  >
+                    <Icon className={`h-5 w-5 ${color}`} />
+                    <p className="text-xs font-semibold text-foreground">{label}</p>
+                    <p className="text-[11px] text-muted-foreground leading-tight">{desc}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Quick starts */}
+              <div className="mt-8">
+                <p className="mb-3 text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
+                  Quick starts
                 </p>
+                <div className="flex flex-col gap-2">
+                  {QUICK_STARTS.map((q) => (
+                    <button
+                      key={q}
+                      onClick={() => sendMessage(q, 'learn')}
+                      className="flex items-center gap-3 w-full text-left rounded-lg border border-border/40 bg-card/50 px-4 py-3 text-xs text-muted-foreground hover:border-primary/30 hover:bg-primary/5 hover:text-foreground transition-all group"
+                    >
+                      <Zap className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/40 group-hover:text-primary transition-colors" />
+                      {q}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          )}
-        </div>
-
-        {/* Input Area */}
-        {currentConversationId && <InputArea />}
-      </div>
+          </div>
+        ) : (
+          /* ── Active chat ────────────────────────────────────────────── */
+          <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
+            <div className="flex-1 overflow-hidden">
+              <MessageList />
+            </div>
+            <InputArea />
+          </div>
+        )}
+      </main>
     </div>
   );
 }

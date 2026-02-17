@@ -3,8 +3,7 @@ export interface User {
   email: string;
   name?: string;
   avatar?: string;
-  createdAt: Date;
-  preferences: UserPreferences;
+  createdAt?: Date;
 }
 
 export interface UserPreferences {
@@ -12,9 +11,12 @@ export interface UserPreferences {
   language: string;
   subtitlesEnabled: boolean;
   autoPlayVideo: boolean;
+  prefersVideo: boolean;   // mirrors backend sessions.prefers_video
 }
 
 export interface AuthSession {
   user: User;
-  expires: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
 }

@@ -1,116 +1,87 @@
 'use client';
 
-import { useState } from 'react';
-import { Input } from '@/components/ui/input';
+import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Send, Loader2 } from 'lucide-react';
+import { useChat } from '@/hooks/use-chat';
 import { VoiceInput } from './VoiceInput';
-import { Send } from 'lucide-react';
-import { useChatStore } from '@/store/chatStore';
-import { apiClient } from '@/services/api';
-import toast from 'react-hot-toast';
 
 export function InputArea() {
   const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const currentConversationId = useChatStore((state) => state.currentConversationId);
-  const addMessage = useChatStore((state) => state.addMessage);
-  const setIsGeneratingVideo = useChatStore((state) => state.setIsGeneratingVideo);
-  const setVideoResponse = useChatStore((state) => state.setVideoResponse);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { sendMessage, isLoadingMessage } = useChat();
 
-  const handleSendMessage = async () => {
-    if (!message.trim() || !currentConversationId) {
-      toast.error('Please enter a message');
-      return;
-    }
+  const handleSend = async () => {
+    const text = message.trim();
+    if (!text || isLoadingMessage) return;
+    setMessage('');
+    // Reset textarea height
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    await sendMessage(text, 'learn');
+  };
 
-    setIsLoading(true);
-    setIsGeneratingVideo(true);
-
-    try {
-      // Add user message to store
-      const userMessage = {
-        id: Date.now().toString(),
-        conversationId: currentConversationId,
-        role: 'user' as const,
-        content: message,
-        timestamp: new Date(),
-      };
-
-      addMessage(userMessage);
-
-      // Send to API
-      const response = await apiClient.sendMessage({
-        conversationId: currentConversationId,
-        message: message.trim(),
-      });
-
-      if (response.success && response.data) {
-        // Add AI message
-        const aiMessage = {
-          id: response.data.messageId,
-          conversationId: currentConversationId,
-          role: 'assistant' as const,
-          content: 'Video response',
-          timestamp: new Date(),
-        };
-
-        addMessage(aiMessage);
-
-        // Set video response
-        setVideoResponse({
-          videoUrl: response.data.videoResponse.videoUrl,
-          duration: response.data.videoResponse.duration,
-          subtitles: response.data.videoResponse.subtitles,
-          status: 'ready',
-        });
-
-        toast.success('Response received!');
-      } else {
-        toast.error(response.error?.message || 'Failed to send message');
-      }
-    } catch (error) {
-      toast.error('Failed to send message');
-      console.error(error);
-    } finally {
-      setMessage('');
-      setIsLoading(false);
-      setIsGeneratingVideo(false);
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
+  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setMessage(e.target.value);
+    // Auto-grow textarea
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+  };
+
+  const handleVoiceTranscript = (transcript: string) => {
+    setMessage((prev) => (prev ? `${prev} ${transcript}` : transcript).trim());
+    textareaRef.current?.focus();
   };
 
   return (
-    <div className="border-t border-border bg-card p-4">
-      <div className="flex gap-2">
-        <VoiceInput
-          onRecordingComplete={(audioUrl) => {
-            setMessage(audioUrl);
-          }}
-        />
+    <div className="border-t border-border/50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 py-3">
+      <div className="mx-auto max-w-3xl">
+        <div className="flex items-end gap-2 rounded-xl border border-border bg-card p-2 shadow-sm focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+          {/* Voice input */}
+          <div className="flex-shrink-0 self-end pb-0.5">
+            <VoiceInput onRecordingComplete={handleVoiceTranscript} />
+          </div>
 
-        <Input
-          placeholder="Type your question or click the microphone to record..."
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          onKeyPress={handleKeyPress}
-          disabled={isLoading}
-          className="flex-1"
-        />
+          {/* Text input */}
+          <Textarea
+            ref={textareaRef}
+            value={message}
+            onChange={handleInput}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask anything about froth flotation…"
+            disabled={isLoadingMessage}
+            rows={1}
+            className="flex-1 resize-none border-0 bg-transparent p-1 text-sm shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/60 min-h-[36px] max-h-[160px] leading-relaxed"
+          />
 
-        <Button
-          onClick={handleSendMessage}
-          disabled={isLoading || !message.trim()}
-          className="gap-2"
-        >
-          <Send className="h-4 w-4" />
-          Send
-        </Button>
+          {/* Send button */}
+          <div className="flex-shrink-0 self-end pb-0.5">
+            <Button
+              onClick={handleSend}
+              disabled={!message.trim() || isLoadingMessage}
+              size="icon"
+              className="h-8 w-8 rounded-lg"
+            >
+              {isLoadingMessage ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        </div>
+
+        <p className="mt-1.5 text-center text-[11px] text-muted-foreground/50">
+          Press Enter to send · Shift+Enter for new line
+        </p>
       </div>
     </div>
   );

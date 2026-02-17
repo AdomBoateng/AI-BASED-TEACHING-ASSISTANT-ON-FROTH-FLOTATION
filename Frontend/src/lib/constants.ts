@@ -21,38 +21,29 @@ export const MAX_RECORDING_DURATION = 300000; // 5 minutes in ms
 
 // Video Configuration
 export const VIDEO_MIME_TYPES = ['video/mp4', 'application/x-mpegURL'];
-export const MAX_VIDEO_DURATION = 3600000; // 1 hour in ms
+export const MAX_VIDEO_DURATION = 3600000;
 export const DEFAULT_SUBTITLE_SIZE = 16;
 
-// API Endpoints
+// ─── Actual Backend API Endpoints ───────────────────────────────────────────
 export const API_ENDPOINTS = {
-  HEALTH: '/api/health',
-  // Auth endpoints
-  AUTH_LOGIN: '/api/auth/login',
-  AUTH_SIGNUP: '/api/auth/signup',
-  AUTH_LOGOUT: '/api/auth/logout',
-  AUTH_SESSION: '/api/auth/session',
-  // Chat endpoints
-  CHAT_MESSAGE: '/api/chat',
-  CHAT_CONVERSATIONS: '/api/conversations',
-  CHAT_CONVERSATION_DETAIL: (id: string) => `/api/conversations/${id}`,
-  // User endpoints
-  USER_PROFILE: '/api/user/profile',
-  USER_PREFERENCES: '/api/user/preferences',
-  // Upload endpoints
-  UPLOAD_AUDIO: '/api/upload/audio',
-  UPLOAD_VIDEO: '/api/upload/video',
-};
+  HEALTH: '/health',
 
-// WebSocket Events
-export const WS_EVENTS = {
-  CONNECT: 'connect',
-  DISCONNECT: 'disconnect',
-  MESSAGE: 'message',
-  VIDEO_CHUNK_READY: 'video_chunk_ready',
-  SUBTITLES_READY: 'subtitles_ready',
-  RESPONSE_COMPLETE: 'response_complete',
-  ERROR: 'error',
+  // Auth  →  /auth/*
+  AUTH_LOGIN: '/auth/login',
+  AUTH_SIGNUP: '/auth/signup',
+  AUTH_FORGOT_PASSWORD: '/auth/forgot-password',
+  AUTH_GOOGLE_URL: '/auth/google/url',
+  AUTH_GOOGLE_CALLBACK: '/auth/google/callback',
+
+  // RAG / tutor turn  →  /rag/turn
+  RAG_TURN: '/rag/turn',
+
+  // Sessions  →  /sessions/*
+  SESSION_VIDEO: (sessionId: string) => `/sessions/${sessionId}/video`,
+
+  // Mode-sessions  →  /mode-sessions/*  (practice & review)
+  MODE_SESSION_START: '/mode-sessions/start',
+  MODE_SESSION_TURN: (sessionId: string) => `/mode-sessions/${sessionId}/turn`,
 };
 
 // Error Messages
@@ -67,10 +58,9 @@ export const ERROR_MESSAGES = {
   UNEXPECTED_ERROR: 'An unexpected error occurred. Please try again.',
 };
 
-// Success Messages
 export const SUCCESS_MESSAGES = {
   MESSAGE_SENT: 'Message sent successfully!',
-  CONVERSATION_CREATED: 'Conversation created successfully!',
+  CONVERSATION_CREATED: 'New session started!',
   PREFERENCES_UPDATED: 'Preferences updated successfully!',
   LOGGED_OUT: 'You have been logged out.',
 };
@@ -82,4 +72,4 @@ export const MAX_PAGE_SIZE = 100;
 // Delays (in milliseconds)
 export const DEBOUNCE_DELAY = 300;
 export const TOAST_DURATION = 3000;
-export const VIDEO_LOAD_TIMEOUT = 30000; // 30 seconds
+export const VIDEO_LOAD_TIMEOUT = 30000;

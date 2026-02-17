@@ -1,59 +1,52 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Settings, LogOut, MoreVertical, User } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import { apiClient } from '@/services/api';
+import { LogOut, Settings, User } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 
 export function SidebarMenu() {
-  const user = useUserStore((state) => state.user);
-  const logout = useUserStore((state) => state.logout);
+  const user = useUserStore((s) => s.user);
+  const logout = useUserStore((s) => s.logout);
+  const router = useRouter();
 
-  const handleLogout = async () => {
-    try {
-      await apiClient.logout();
-      logout();
-      toast.success('Logged out successfully');
-    } catch (error) {
-      toast.error('Failed to logout');
-    }
+  const handleLogout = () => {
+    apiClient.logout();
+    logout();
+    toast.success('Logged out');
+    router.push('/auth/login');
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="w-full justify-center">
-          <MoreVertical className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuItem disabled className="text-xs py-2">
-          <User className="h-4 w-4 mr-2" />
-          <div className="flex flex-col">
-            <span className="font-medium">{user?.name || 'User'}</span>
-            <span className="text-muted-foreground text-xs">{user?.email}</span>
+    <div className="flex flex-col gap-1">
+      {/* User info */}
+      {user && (
+        <div className="flex items-center gap-2.5 px-2 py-2 mb-1">
+          <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+            <span className="text-[11px] font-semibold text-primary uppercase">
+              {user.email?.[0] ?? 'U'}
+            </span>
           </div>
-        </DropdownMenuItem>
+          <p className="text-xs text-muted-foreground truncate flex-1 min-w-0">
+            {user.email}
+          </p>
+        </div>
+      )}
 
-        <DropdownMenuItem asChild>
-          <button className="w-full text-left cursor-pointer py-2">
-            <Settings className="h-4 w-4 mr-2" />
-            Settings
-          </button>
-        </DropdownMenuItem>
+      {/* Menu items */}
+      <button className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors w-full text-left">
+        <Settings className="h-3.5 w-3.5 flex-shrink-0" />
+        Settings
+      </button>
 
-        <DropdownMenuItem asChild>
-          <button
-            onClick={handleLogout}
-            className="w-full text-left cursor-pointer py-2 text-destructive focus:text-destructive"
-          >
-            <LogOut className="h-4 w-4 mr-2" />
-            Logout
-          </button>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+      <button
+        onClick={handleLogout}
+        className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors w-full text-left"
+      >
+        <LogOut className="h-3.5 w-3.5 flex-shrink-0" />
+        Log out
+      </button>
+    </div>
   );
 }
