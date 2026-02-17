@@ -26,7 +26,7 @@ router = APIRouter(prefix="/mode-sessions", tags=["Mode Sessions"])
 def _ensure_chat_session_ownership(session_id: str, user_id: str, default_mode: str = "learn"):
     """
     Ensures the chat session exists and belongs to the user.
-    If it doesn't exist, create it (UX-friendly for Swagger testing).
+    If it doesn't exist, create it (Swagger-friendly).
     """
     supabase = get_supabase()
     s = (
@@ -46,27 +46,34 @@ def _ensure_chat_session_ownership(session_id: str, user_id: str, default_mode: 
         }).execute()
         return
 
-    # Multiple rows should never happen, but handle safely
     row = s.data[0]
     if row["user_id"] != user_id:
         raise HTTPException(status_code=403, detail="Not allowed")
 
 
-
 def _ensure_mode_session_ownership(mode_session_id: str, user_id: str):
+    """
+    Avoid .single() to prevent PGRST116 crashes when 0 rows.
+    """
     supabase = get_supabase()
     ms = (
         supabase.table("mode_sessions")
         .select("*")
         .eq("id", mode_session_id)
-        .single()
         .execute()
     )
+
     if not ms.data:
-        raise HTTPException(status_code=404, detail="Mode session not found")
-    if ms.data["user_id"] != user_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Mode session not found: {mode_session_id}. Start a new one with POST /mode-sessions/start."
+        )
+
+    row = ms.data[0]
+    if row["user_id"] != user_id:
         raise HTTPException(status_code=403, detail="Not allowed")
-    return ms.data
+
+    return row
 
 
 # -------------------------
@@ -84,9 +91,10 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
     if mode not in ("practice", "review"):
         raise HTTPException(status_code=400, detail="mode must be practice or review")
 
+    # Ensure base chat session exists and is owned by this user
     _ensure_chat_session_ownership(payload.session_id, user["id"], default_mode=mode)
 
-    # Enforced policy: review is always text-only
+    # Policy: review is always text-only; practice follows session prefers_video
     response_format = response_format_for_mode(payload.session_id, mode)
 
     # Create mode_session row
@@ -104,15 +112,21 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
         })
         .execute()
     )
+
+    if not ms.data:
+        raise HTTPException(status_code=500, detail="Failed to create mode session")
+
     mode_session_id = ms.data[0]["id"]
 
-    # Generate first item and store state keyed by mode_session_id
+    # -------------------------
+    # REVIEW START (text-only)
+    # -------------------------
     if mode == "review":
         item, contexts = await generate_review_item(session_type=stype, difficulty=difficulty)
         prompt_text = format_review_prompt(item)
 
         supabase.table("session_state").upsert({
-            "session_id": payload.session_id,
+            "session_id": payload.session_id,          # ✅ keep NOT NULL satisfied
             "mode_session_id": mode_session_id,
             "pending_mode": "review",
             "pending_payload": item,
@@ -143,12 +157,14 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
             "video_url": None
         }
 
-    # Practice start (video allowed)
+    # -------------------------
+    # PRACTICE START (video allowed)
+    # -------------------------
     scenario, contexts = await generate_practice_scenario(session_type=stype, difficulty=difficulty)
     prompt_text = format_practice_prompt(scenario, step=1)
 
     supabase.table("session_state").upsert({
-        "session_id": payload.session_id,
+        "session_id": payload.session_id,              # ✅ keep NOT NULL satisfied
         "mode_session_id": mode_session_id,
         "pending_mode": "practice",
         "pending_payload": scenario,
@@ -193,27 +209,30 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
     mode = ms["mode"]
     stype = ms["session_type"]
 
-    # Enforce policy: review is text-only; learn/practice follow session prefers_video
+    # Enforce policy:
+    # - review: always text
+    # - practice: session-level prefers_video via response_format_for_mode
     response_format = response_format_for_mode(session_id, mode)
 
     st = (
         supabase.table("session_state")
         .select("*")
         .eq("mode_session_id", mode_session_id)
-        .single()
         .execute()
     )
     if not st.data:
         raise HTTPException(status_code=409, detail="No active state for this mode session. Start again.")
 
+    state = st.data[0]
+
     student_answer = payload.message.strip()
     if not student_answer:
         raise HTTPException(status_code=400, detail="message cannot be empty")
 
-    pending_payload = st.data["pending_payload"]
-    contexts = st.data.get("contexts") or []
-    step = int(st.data.get("step", 1))
-    total_steps = int(st.data.get("total_steps", 1))
+    pending_payload = state["pending_payload"]
+    contexts = state.get("contexts") or []
+    step = int(state.get("step", 1))
+    total_steps = int(state.get("total_steps", 1))
 
     # -------------------------
     # PRACTICE
@@ -233,6 +252,7 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
         )
 
         delivery_eval = await maybe_generate_video(feedback_text, response_format)
+
         log_conversation(
             session_id=session_id,
             user_id=user["id"],
@@ -252,6 +272,7 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
             supabase.table("mode_sessions").update({"current_item": next_step}).eq("id", mode_session_id).execute()
 
             delivery_next = await maybe_generate_video(next_prompt, response_format)
+
             log_conversation(
                 session_id=session_id,
                 user_id=user["id"],
@@ -276,6 +297,7 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
         key_text = "Key Learning Points: " + " | ".join(key_points) if key_points else "Practice scenario completed."
 
         delivery_key = await maybe_generate_video(key_text, response_format)
+
         log_conversation(
             session_id=session_id,
             user_id=user["id"],
@@ -286,7 +308,8 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
             video_url=delivery_key.get("video_url")
         )
 
-        supabase.table("mode_sessions").update({"completed": True, "ended_at": "now()"}).eq("id", mode_session_id).execute()
+        # NOTE: if your DB expects ended_at timestamp, you should set it in python instead of "now()"
+        supabase.table("mode_sessions").update({"completed": True}).eq("id", mode_session_id).execute()
         supabase.table("session_state").delete().eq("mode_session_id", mode_session_id).execute()
 
         return {
@@ -302,7 +325,6 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
     # -------------------------
     # REVIEW (text-only)
     # -------------------------
-    # No video generation here by design.
     difficulty = ms["difficulty"]
     total_items = int(ms.get("total_items") or 10)
     current_item = int(ms.get("current_item") or 1)
@@ -335,7 +357,7 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
 
     # Auto-end when done
     if current_item >= total_items:
-        supabase.table("mode_sessions").update({"completed": True, "ended_at": "now()"}).eq("id", mode_session_id).execute()
+        supabase.table("mode_sessions").update({"completed": True}).eq("id", mode_session_id).execute()
         supabase.table("session_state").delete().eq("mode_session_id", mode_session_id).execute()
 
         return {
@@ -351,6 +373,7 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
     next_prompt = format_review_prompt(item2)
 
     supabase.table("session_state").upsert({
+        "session_id": session_id,              # ✅ IMPORTANT (NOT NULL)
         "mode_session_id": mode_session_id,
         "pending_mode": "review",
         "pending_payload": item2,
@@ -395,7 +418,7 @@ async def end_mode_session(mode_session_id: str, user=Depends(auth_guard)):
     supabase = get_supabase()
     _ensure_mode_session_ownership(mode_session_id, user["id"])
 
-    supabase.table("mode_sessions").update({"completed": True, "ended_at": "now()"}).eq("id", mode_session_id).execute()
+    supabase.table("mode_sessions").update({"completed": True}).eq("id", mode_session_id).execute()
     supabase.table("session_state").delete().eq("mode_session_id", mode_session_id).execute()
 
     return {"mode_session_id": mode_session_id, "status": "ended"}
