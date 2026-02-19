@@ -5,6 +5,7 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Optional
+from openai import OpenAI
 
 from fastapi import HTTPException
 
@@ -12,9 +13,6 @@ from app.config import load_env
 
 load_env()
 
-# If you use the new OpenAI SDK:
-# pip install openai
-from openai import OpenAI
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
