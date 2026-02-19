@@ -1,9 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
 from app.core.auth import auth_guard
 from app.core.chat_repo import response_format_for_mode, log_conversation
 from app.db.supabase import get_supabase
 from app.media.video_service import maybe_generate_video
+from app.media.stt_service import transcribe_audio
 from app.models.models import ModeSessionStartRequest, ModeSessionTurnRequest
 
 from .service import (
@@ -23,6 +27,10 @@ router = APIRouter(prefix="/mode-sessions", tags=["Mode Sessions"])
 # Helpers
 # -------------------------
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def _ensure_chat_session_ownership(session_id: str, user_id: str, default_mode: str = "learn"):
     """
     Ensures the chat session exists and belongs to the user.
@@ -36,7 +44,6 @@ def _ensure_chat_session_ownership(session_id: str, user_id: str, default_mode: 
         .execute()
     )
 
-    # No rows -> create session
     if not s.data:
         supabase.table("sessions").insert({
             "id": session_id,
@@ -66,7 +73,7 @@ def _ensure_mode_session_ownership(mode_session_id: str, user_id: str):
     if not ms.data:
         raise HTTPException(
             status_code=404,
-            detail=f"Mode session not found: {mode_session_id}. Start a new one with POST /mode-sessions/start."
+            detail=f"Mode session not found: {mode_session_id}. Start with POST /mode-sessions/start."
         )
 
     row = ms.data[0]
@@ -74,6 +81,55 @@ def _ensure_mode_session_ownership(mode_session_id: str, user_id: str):
         raise HTTPException(status_code=403, detail="Not allowed")
 
     return row
+
+
+async def _stt(audio_bytes: bytes, filename: str) -> str:
+    """
+    Handles both sync and async transcribe_audio implementations safely.
+    """
+    out = transcribe_audio(audio_bytes, filename)
+    if hasattr(out, "__await__"):  # coroutine
+        out = await out
+    transcript = (out or "").strip()
+    if not transcript:
+        raise HTTPException(status_code=400, detail="Could not transcribe audio")
+    return transcript
+
+
+async def _deliver_and_log(
+    *,
+    session_id: str,
+    user_id: str,
+    mode: str,
+    user_input: str,
+    tutor_text: str,
+    response_format: str
+) -> dict:
+    """
+    Centralized: generate optional video, log conversation, return delivery dict.
+    """
+    delivery = await maybe_generate_video(
+        text=tutor_text,
+        response_format=response_format,
+        user_id=user_id,
+        session_id=session_id,
+        mode=mode,
+    )
+
+    # If your conversations table has audio_url, log_conversation should accept it.
+    # If your current log_conversation signature doesn't accept audio_url, remove it.
+    log_conversation(
+        session_id=session_id,
+        user_id=user_id,
+        mode=mode,
+        user_input=user_input,
+        tutor_response=tutor_text,
+        response_format=delivery.get("response_format", response_format),
+        video_url=delivery.get("video_url"),
+        audio_url=delivery.get("audio_url"),
+    )
+
+    return delivery
 
 
 # -------------------------
@@ -91,13 +147,13 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
     if mode not in ("practice", "review"):
         raise HTTPException(status_code=400, detail="mode must be practice or review")
 
-    # Ensure base chat session exists and is owned by this user
     _ensure_chat_session_ownership(payload.session_id, user["id"], default_mode=mode)
 
-    # Policy: review is always text-only; practice follows session prefers_video
+    # Policy:
+    # - review always text
+    # - practice follows session prefers_video
     response_format = response_format_for_mode(payload.session_id, mode)
 
-    # Create mode_session row
     ms = (
         supabase.table("mode_sessions")
         .insert({
@@ -108,7 +164,8 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
             "difficulty": difficulty,
             "total_items": (payload.total_items or 10) if mode == "review" else 3,
             "current_item": 1,
-            "completed": False
+            "completed": False,
+            "started_at": _now_iso(),
         })
         .execute()
     )
@@ -126,7 +183,7 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
         prompt_text = format_review_prompt(item)
 
         supabase.table("session_state").upsert({
-            "session_id": payload.session_id,          # ✅ keep NOT NULL satisfied
+            "session_id": payload.session_id,   # ✅ NOT NULL satisfied
             "mode_session_id": mode_session_id,
             "pending_mode": "review",
             "pending_payload": item,
@@ -136,7 +193,7 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
             "contexts": contexts
         }).execute()
 
-        # Log start prompt (review text-only)
+        # Log prompt (text-only)
         log_conversation(
             session_id=payload.session_id,
             user_id=user["id"],
@@ -144,7 +201,8 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
             user_input=f"(system) start review [{stype}]",
             tutor_response=prompt_text,
             response_format="text",
-            video_url=None
+            video_url=None,
+            audio_url=None,
         )
 
         return {
@@ -164,7 +222,7 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
     prompt_text = format_practice_prompt(scenario, step=1)
 
     supabase.table("session_state").upsert({
-        "session_id": payload.session_id,              # ✅ keep NOT NULL satisfied
+        "session_id": payload.session_id,      # ✅ NOT NULL satisfied
         "mode_session_id": mode_session_id,
         "pending_mode": "practice",
         "pending_payload": scenario,
@@ -174,16 +232,13 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
         "contexts": contexts
     }).execute()
 
-    delivery = await maybe_generate_video(prompt_text, response_format)
-
-    log_conversation(
+    delivery = await _deliver_and_log(
         session_id=payload.session_id,
         user_id=user["id"],
         mode="practice",
         user_input=f"(system) start practice [{stype}]",
-        tutor_response=prompt_text,
-        response_format=response_format,
-        video_url=delivery.get("video_url")
+        tutor_text=prompt_text,
+        response_format=response_format
     )
 
     return {
@@ -209,9 +264,6 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
     mode = ms["mode"]
     stype = ms["session_type"]
 
-    # Enforce policy:
-    # - review: always text
-    # - practice: session-level prefers_video via response_format_for_mode
     response_format = response_format_for_mode(session_id, mode)
 
     st = (
@@ -251,23 +303,13 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
             f"Feedback: {eval_out['feedback']}"
         )
 
-        delivery_eval = await maybe_generate_video(
-            text=feedback_text,
-            response_format=response_format,
-            user_id=user["id"],
-            session_id=session_id,
-            mode=mode
-        )
-
-
-        log_conversation(
+        delivery_eval = await _deliver_and_log(
             session_id=session_id,
             user_id=user["id"],
             mode="practice",
             user_input=student_answer,
-            tutor_response=feedback_text,
-            response_format=response_format,
-            video_url=delivery_eval.get("video_url")
+            tutor_text=feedback_text,
+            response_format=response_format
         )
 
         # next guided question?
@@ -278,22 +320,13 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
             supabase.table("session_state").update({"step": next_step}).eq("mode_session_id", mode_session_id).execute()
             supabase.table("mode_sessions").update({"current_item": next_step}).eq("id", mode_session_id).execute()
 
-            delivery_next = await maybe_generate_video(
-                text=next_prompt,
-                response_format=response_format,
-                user_id=user["id"],
-                session_id=session_id,
-                mode=mode
-            )
-
-            log_conversation(
+            delivery_next = await _deliver_and_log(
                 session_id=session_id,
                 user_id=user["id"],
                 mode="practice",
                 user_input="(system) next guided question",
-                tutor_response=next_prompt,
-                response_format=response_format,
-                video_url=delivery_next.get("video_url")
+                tutor_text=next_prompt,
+                response_format=response_format
             )
 
             return {
@@ -309,26 +342,20 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
         key_points = pending_payload.get("key_learning_points", [])
         key_text = "Key Learning Points: " + " | ".join(key_points) if key_points else "Practice scenario completed."
 
-        delivery_key = await maybe_generate_video(
-                text=key_text,
-                response_format=response_format,
-                user_id=user["id"],
-                session_id=session_id,
-                mode=mode
-            )
-
-        log_conversation(
+        delivery_key = await _deliver_and_log(
             session_id=session_id,
             user_id=user["id"],
             mode="practice",
             user_input="(system) scenario complete",
-            tutor_response=key_text,
-            response_format=response_format,
-            video_url=delivery_key.get("video_url")
+            tutor_text=key_text,
+            response_format=response_format
         )
 
-        # NOTE: if your DB expects ended_at timestamp, you should set it in python instead of "now()"
-        supabase.table("mode_sessions").update({"completed": True}).eq("id", mode_session_id).execute()
+        supabase.table("mode_sessions").update({
+            "completed": True,
+            "ended_at": _now_iso()
+        }).eq("id", mode_session_id).execute()
+
         supabase.table("session_state").delete().eq("mode_session_id", mode_session_id).execute()
 
         return {
@@ -364,6 +391,7 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
         f"Feedback: {eval_out['feedback']}"
     )
 
+    # review is text-only
     log_conversation(
         session_id=session_id,
         user_id=user["id"],
@@ -371,12 +399,17 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
         user_input=student_answer,
         tutor_response=feedback_text,
         response_format="text",
-        video_url=None
+        video_url=None,
+        audio_url=None,
     )
 
     # Auto-end when done
     if current_item >= total_items:
-        supabase.table("mode_sessions").update({"completed": True}).eq("id", mode_session_id).execute()
+        supabase.table("mode_sessions").update({
+            "completed": True,
+            "ended_at": _now_iso()
+        }).eq("id", mode_session_id).execute()
+
         supabase.table("session_state").delete().eq("mode_session_id", mode_session_id).execute()
 
         return {
@@ -391,8 +424,9 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
     item2, ctx2 = await generate_review_item(session_type=stype, difficulty=next_difficulty)
     next_prompt = format_review_prompt(item2)
 
+    # ✅ IMPORTANT: session_id must be included (NOT NULL)
     supabase.table("session_state").upsert({
-        "session_id": session_id,              # ✅ IMPORTANT (NOT NULL)
+        "session_id": session_id,
         "mode_session_id": mode_session_id,
         "pending_mode": "review",
         "pending_payload": item2,
@@ -414,7 +448,8 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
         user_input="(system) next question",
         tutor_response=next_prompt,
         response_format="text",
-        video_url=None
+        video_url=None,
+        audio_url=None,
     )
 
     return {
@@ -437,7 +472,32 @@ async def end_mode_session(mode_session_id: str, user=Depends(auth_guard)):
     supabase = get_supabase()
     _ensure_mode_session_ownership(mode_session_id, user["id"])
 
-    supabase.table("mode_sessions").update({"completed": True}).eq("id", mode_session_id).execute()
+    supabase.table("mode_sessions").update({
+        "completed": True,
+        "ended_at": _now_iso()
+    }).eq("id", mode_session_id).execute()
+
     supabase.table("session_state").delete().eq("mode_session_id", mode_session_id).execute()
 
     return {"mode_session_id": mode_session_id, "status": "ended"}
+
+
+@router.post("/{mode_session_id}/turn/voice")
+async def mode_session_turn_voice(
+    mode_session_id: str,
+    file: UploadFile = File(...),
+    user=Depends(auth_guard)
+):
+    """
+    Voice input for Practice/Review mode sessions: STT -> same /turn logic.
+    """
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio upload")
+
+    transcript = await _stt(audio_bytes, file.filename)
+
+    payload = ModeSessionTurnRequest(message=transcript)
+    out = await mode_session_turn(mode_session_id, payload, user)
+    out["transcript"] = transcript
+    return out

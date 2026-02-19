@@ -5,6 +5,32 @@ from app.models.models import AvatarSelectRequest
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
+@router.get("/me")
+def get_me(user=Depends(auth_guard)):
+    supabase = get_supabase()
+    res = supabase.table("users").select("*").eq("id", user["id"]).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    row = res.data[0]
+    # If you later add display_name, return it here too.
+    return {
+        "id": row["id"],
+        "email": row["email"],
+        "role": row["role"],
+        "avatar_id": row["avatar_id"],
+        "avatar_provider": row["avatar_provider"],
+        "avatar_gender": row.get("avatar_gender"),
+        "voice_provider": row.get("voice_provider"),
+        "voice_id": row.get("voice_id"),
+        "voice_gender": row.get("voice_gender"),
+        "created_at": row.get("created_at"),
+    }
+
+@router.patch("/me/avatar")
+def update_avatar(payload: AvatarSelectRequest, user=Depends(auth_guard)):
+    """User selects/changes avatar. Voice is bundled automatically via avatar_voice_bundles."""
+    return select_avatar(payload, user)
+
 @router.post("/avatar")
 def select_avatar(payload: AvatarSelectRequest, user=Depends(auth_guard)):
     supabase = get_supabase()

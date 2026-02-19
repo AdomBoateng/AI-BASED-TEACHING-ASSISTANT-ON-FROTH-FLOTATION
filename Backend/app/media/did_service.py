@@ -1,56 +1,123 @@
+# app/media/did_service.py
+from __future__ import annotations
+
 import os
-import requests
 import time
+import requests
+from typing import Any, Dict, Optional
+
 from app.config import load_env
 
 load_env()
 
 DID_API_KEY = os.getenv("DID_API_KEY")
-DID_BASE = os.getenv("DID_BASE_URL")
+if not DID_API_KEY:
+    raise RuntimeError("Missing DID_API_KEY")
 
-headers = {
+# IMPORTANT: V3 Pro Avatars use /clips
+DID_BASE_URL = "https://api.d-id.com"
+CLIPS_URL = f"{DID_BASE_URL}/clips"
+
+HEADERS = {
     "accept": "application/json",
     "content-type": "application/json",
     "authorization": f"Basic {DID_API_KEY}",
 }
 
-def create_talk_from_audio(presenter_id: str, audio_url: str, title: str = None) -> str:
-    # https://docs.d-id.com/reference/talks-api
-    payload = {
+class DidError(RuntimeError):
+    pass
+
+
+def create_clip_from_audio(
+    *,
+    presenter_id: str,
+    audio_url: str,
+    title: Optional[str] = None,
+    fluent: bool = True,
+    stitch: bool = True,
+    pad_audio: float = 0.5,
+    result_format: str = "mp4",
+    timeout_seconds: int = 360,      # increased default
+    poll_interval: float = 2.5,
+) -> Dict[str, Any]:
+    """
+    V3 Pro Avatars:
+      POST  https://api.d-id.com/clips
+      GET   https://api.d-id.com/clips/{id}
+    """
+
+    payload: Dict[str, Any] = {
         "presenter_id": presenter_id,
         "script": {
             "type": "audio",
-            "audio_url": audio_url
+            "audio_url": audio_url,
         },
         "config": {
-            "stitch": True,         # REQUIRED: Matches high-res head to background for crispness
-            "fluent": True,         # Smoother lip-sync transitions
-            "pad_audio": 0.5,       # Natural buffer for the teacher's speech
-            "result_format": "mp4",
-        }
+            "fluent": fluent,
+            "stitch": stitch,
+            "pad_audio": pad_audio,
+            "result_format": result_format,
+        },
     }
+    if title:
+        payload["title"] = title
 
-    r = requests.post(DID_BASE, json=payload, headers=headers, timeout=60)
-    r.raise_for_status()
+    r = requests.post(CLIPS_URL, json=payload, headers=HEADERS, timeout=60)
+    if r.status_code >= 400:
+        raise DidError(f"D-ID API error [{r.status_code}]: {r.json() if _is_json(r) else r.text}\n"
+                       f"Request payload: {payload}")
+
     data = r.json()
-    video_id = data.get("id") or data.get("url")  # depends on D-ID response
-    return _wait_for_video(video_id)  # depends on D-ID response
+    clip_id = data.get("id")
+    if not clip_id:
+        # Some APIs return url; handle defensively
+        clip_id = data.get("url") or data.get("clip_id")
+    if not clip_id:
+        raise DidError(f"D-ID create clip returned no id. Raw: {data}")
+
+    # Poll until done
+    result = wait_for_clip_result(
+        clip_id=str(clip_id),
+        timeout_seconds=timeout_seconds,
+        poll_interval=poll_interval,
+    )
+    return result
 
 
-def _wait_for_video(talk_id: str) -> str:
-    status_url = f"{DID_BASE}/talks/{talk_id}"
+def wait_for_clip_result(
+    clip_id: str,
+    timeout_seconds: int = 360,
+    poll_interval: float = 2.5,
+) -> Dict[str, Any]:
+    """
+    GET https://api.d-id.com/clips/{id}
+    """
+    status_url = f"{CLIPS_URL}/{clip_id}"
+    deadline = time.time() + timeout_seconds
 
-    for _ in range(40):
-        r = requests.get(status_url, headers=headers, timeout=60)
-        r.raise_for_status()
+    last_payload: Optional[Dict[str, Any]] = None
+
+    while time.time() < deadline:
+        r = requests.get(status_url, headers=HEADERS, timeout=60)
+        if r.status_code >= 400:
+            raise DidError(f"D-ID status error [{r.status_code}]: {r.text}")
+
         data = r.json()
+        last_payload = data
 
-        if data["status"] == "done":
-            return data["result_url"]
+        status = (data.get("status") or "").lower().strip()
+        if status == "done":
+            # Different APIs name it differently; return whole payload
+            return data
 
-        if data["status"] == "error":
-            raise RuntimeError(f"D-ID processing error: {data}")
+        if status == "error":
+            raise DidError(f"D-ID clip failed: {data}")
 
-        time.sleep(2)
+        time.sleep(poll_interval)
 
-    raise TimeoutError("Avatar generation timed out")
+    raise TimeoutError(f"Avatar generation timed out (clip_id={clip_id}). Last status: {last_payload}")
+
+
+def _is_json(r: requests.Response) -> bool:
+    ct = (r.headers.get("content-type") or "").lower()
+    return "application/json" in ct
