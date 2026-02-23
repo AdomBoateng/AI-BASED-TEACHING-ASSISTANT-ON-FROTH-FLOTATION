@@ -26,6 +26,8 @@ def create_avatar_video_from_audio(audio_url: str) -> str:
         "config": {
             "fluent": True,
             "pad_audio": 0.5,
+            "stitch": True,         # Natural buffer for the teacher's speech
+            "result_format": "mp4",
         },
     }
 

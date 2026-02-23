@@ -1,6 +1,6 @@
 from anthropic import Anthropic
 import os
-from typing import Dict, Optional
+from typing import Dict
 
 from app.config import load_env
 
