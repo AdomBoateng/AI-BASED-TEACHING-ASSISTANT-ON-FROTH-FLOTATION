@@ -256,7 +256,7 @@ async def query_rag(
     )
 
     # 3️⃣ Call Claude Opus
-    raw_output = generate_response(prompt=prompt, mode=mode)
+    raw_output = await generate_response(prompt=prompt, mode=mode)
 
     # 4️⃣ Enforce structured output for review mode
     if mode == "review":
