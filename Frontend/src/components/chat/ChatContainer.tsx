@@ -10,7 +10,6 @@ import { MessageList } from './MessageList';
 import { InputArea } from './InputArea';
 import { useChat } from '@/hooks/use-chat';
 import { BookOpen, FlaskConical, ClipboardCheck, Zap } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 
 const QUICK_STARTS = [
   'What is froth flotation and how does it work?',
@@ -29,19 +28,16 @@ export function ChatContainer() {
 
   useEffect(() => {
     setMounted(true);
-    // On mobile, default sidebar to closed
     if (isMobile) setSidebarOpen(false);
-  }, []); // eslint-disable-line
+  }, []); 
 
   if (!mounted) return null;
 
   const showWelcome = !currentSessionId;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
 
-      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
-      {/* Mobile overlay */}
+    <div className="flex h-screen overflow-hidden bg-background">
       {isMobile && sidebarOpen && (
         <div
           className="fixed inset-0 z-20 bg-black/50"
@@ -57,25 +53,20 @@ export function ChatContainer() {
           ${sidebarOpen ? 'w-60' : 'w-0'}
         `}
       >
-        {/* Always render sidebar so transitions are smooth — hide content when closed */}
         <div className={`h-full w-60 transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           <Sidebar />
         </div>
       </aside>
 
-      {/* ── Main area ───────────────────────────────────────────────────── */}
-      <main className="flex flex-1 flex-col min-w-0 overflow-hidden">
+      <main className="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
         <Header />
 
         {showWelcome ? (
-          /* ── Welcome / empty state ─────────────────────────────────── */
           <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 overflow-y-auto">
             <div className="w-full max-w-xl text-center">
-              {/* Icon */}
               <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20">
                 <BookOpen className="h-8 w-8 text-primary" />
               </div>
-
               <h1 className="text-2xl font-bold text-foreground tracking-tight">
                 Welcome to Meraki
               </h1>
@@ -83,7 +74,6 @@ export function ChatContainer() {
                 Your AI tutor for froth flotation. Ask questions, work through scenarios, or test your knowledge.
               </p>
 
-              {/* Modes */}
               <div className="mt-8 grid grid-cols-3 gap-3">
                 {[
                   { icon: BookOpen, label: 'Learn', desc: 'Explanations & concepts', color: 'text-blue-400' },
@@ -101,7 +91,6 @@ export function ChatContainer() {
                 ))}
               </div>
 
-              {/* Quick starts */}
               <div className="mt-8">
                 <p className="mb-3 text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
                   Quick starts
@@ -122,11 +111,8 @@ export function ChatContainer() {
             </div>
           </div>
         ) : (
-          /* ── Active chat ────────────────────────────────────────────── */
-          <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
-            <div className="flex-1 overflow-hidden">
-              <MessageList />
-            </div>
+          <div className="flex flex-1 flex-col min-h-0">
+            <MessageList />
             <InputArea />
           </div>
         )}

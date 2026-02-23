@@ -32,9 +32,7 @@ export function ConversationList() {
       <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
         <MessageSquare className="h-7 w-7 text-muted-foreground/30" />
         <p className="text-xs text-muted-foreground/60">No sessions yet</p>
-        <p className="text-[11px] text-muted-foreground/40">
-          Start a new session above
-        </p>
+        <p className="text-[11px] text-muted-foreground/40">Start a new session above</p>
       </div>
     );
   }
@@ -44,6 +42,7 @@ export function ConversationList() {
       {sessions.map((session) => {
         const isActive = session.id === currentSessionId;
         const Icon = modeIcon[session.mode] ?? BookOpen;
+        const timeAgo = formatDistanceToNow(new Date(session.createdAt), { addSuffix: true });
 
         return (
           <div
@@ -58,23 +57,26 @@ export function ConversationList() {
                 : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
             }`}
           >
-            {/* Active indicator */}
+            {/* Active left-bar indicator */}
             {isActive && (
               <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-0.5 rounded-r bg-primary" />
             )}
 
             <div className="flex items-center gap-2.5 min-w-0">
               <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${isActive ? 'text-primary' : ''}`} />
+
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium truncate leading-tight">{session.title}</p>
-                <p className="text-[10px] text-muted-foreground/60 mt-0.5 truncate">
-                  {session.previewMessage
-                    ? session.previewMessage
-                    : formatDistanceToNow(new Date(session.createdAt), { addSuffix: true })}
+                {/* Title = first user message, truncated to one line */}
+                <p className="text-xs font-medium truncate leading-tight">
+                  {session.title}
+                </p>
+                {/* Subtitle = always relative time — never a message preview */}
+                <p className="text-xs text-muted-foreground/60 mt-0.5">
+                  {timeAgo}
                 </p>
               </div>
 
-              {/* Delete button */}
+              {/* Delete — only visible on hover */}
               <button
                 onClick={(e) => handleDelete(session.id, e)}
                 className="flex-shrink-0 rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-destructive/15 hover:text-destructive transition-all"
