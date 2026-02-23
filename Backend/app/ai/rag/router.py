@@ -1,4 +1,9 @@
+# app/ai/rag/router.py
+from __future__ import annotations
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+
+from anthropic._exceptions import OverloadedError, RateLimitError, APITimeoutError, APIError
 
 from app.core.auth import auth_guard
 from app.core.chat_repo import (
@@ -22,14 +27,21 @@ def _set_session_mode(session_id: str, user_id: str, mode: str) -> None:
     Also enforces ownership.
     """
     supabase = get_supabase()
-    res = supabase.table("sessions").select("id,user_id,current_mode").eq("id", session_id).execute()
+    res = (
+        supabase.table("sessions")
+        .select("id,user_id,current_mode")
+        .eq("id", session_id)
+        .execute()
+    )
     if not res.data:
         # session doesn't exist, ensure_session will create it
         return
+
     row = res.data[0]
     if row["user_id"] != user_id:
         raise HTTPException(status_code=403, detail="Not allowed")
-    if row.get("current_mode") != mode:
+
+    if (row.get("current_mode") or "").lower().strip() != mode:
         supabase.table("sessions").update({"current_mode": mode}).eq("id", session_id).execute()
 
 
@@ -43,34 +55,46 @@ async def rag_turn(payload: RagTurnRequest, user=Depends(auth_guard)):
             detail="Practice/Review are handled by /mode-sessions. Use mode='learn' here."
         )
 
-    # Ensure session exists (Swagger-friendly) and belongs to user
+    # Ensure session exists and belongs to user
     ensure_session(payload.session_id, user["id"], current_mode="learn")
     _set_session_mode(payload.session_id, user["id"], "learn")
 
-    # Load memory for conversational grounding
     memory = load_memory(payload.session_id)
 
-    # RAG query
-    result = await query_rag(
-        user_message=payload.message,
-        mode="learn",
-        memory=memory
-    )
+    # RAG query (Graceful overload handling)
+    try:
+        result = await query_rag(
+            user_message=payload.message,
+            mode="learn",
+            memory=memory,
+        )
+    except (OverloadedError, RateLimitError, APITimeoutError, APIError):
+        # No 500 crashes. Frontend gets a clean 503 to show "Try again".
+        raise HTTPException(
+            status_code=503,
+            detail="The AI tutor is temporarily busy. Please try again in a moment."
+        )
+
     tutor_text = result["response"]
 
     # Session-level video toggle
     response_format = response_format_for_mode(payload.session_id, "learn")
 
     # Text -> (optional) video pipeline
-    delivery = await maybe_generate_video(
-        text=tutor_text,
-        response_format=response_format,
-        user_id=user["id"],
-        session_id=payload.session_id,
-        mode="learn"
-    )
+    # Important: maybe_generate_video should NEVER throw the whole request.
+    try:
+        delivery = await maybe_generate_video(
+            text=tutor_text,
+            response_format=response_format,
+            user_id=user["id"],
+            session_id=payload.session_id,
+            mode="learn",
+        )
+    except Exception:
+        # Video pipeline failure should not break learning mode response
+        delivery = {"response_format": "text", "video_url": None, "audio_url": None}
 
-    # Log full turn (✅ now logs audio_url too)
+    # Log
     log_conversation(
         session_id=payload.session_id,
         user_id=user["id"],
@@ -82,11 +106,7 @@ async def rag_turn(payload: RagTurnRequest, user=Depends(auth_guard)):
         audio_url=delivery.get("audio_url"),
     )
 
-    return {
-        "mode": "learn",
-        "response": tutor_text,
-        **delivery
-    }
+    return {"mode": "learn", "response": tutor_text, **delivery}
 
 
 @router.post("/turn/voice")
@@ -102,6 +122,7 @@ async def rag_turn_voice(
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Empty audio upload")
 
+    # Transcribe (you should fix Windows tempfile issue in stt_service separately)
     transcript = transcribe_audio(audio_bytes, file.filename)
 
     payload = RagTurnRequest(session_id=session_id, mode="learn", message=transcript)
