@@ -1,5 +1,3 @@
-// FILE PATH: src/services/api.ts
-
 import { API_BASE_URL, API_ENDPOINTS } from '@/lib/constants';
 import type {
   ApiResponse,
@@ -7,24 +5,29 @@ import type {
   SignupResponse,
   RagTurnRequest,
   RagTurnResponse,
+  VoiceTurnResponse,
+  CreateSessionResponse,
+  SessionDetailsResponse,
+  SessionModeUpdateRequest,
+  SessionModeUpdateResponse,
   VideoToggleRequest,
   VideoToggleResponse,
-  ModeSessionStartRequest,
-  ModeSessionTurnRequest,
+  EndSessionResponse,
+  UserProfileResponse,
+  AvatarSelectRequest,
+  AvatarSelectResponse,
+  SessionSurveyRequest,
+  UserFeedbackRequest,
+  FeedbackResponse,
 } from '@/types';
 
-// ─── Cookie-based token store ─────────────────────────────────────────────────
-// Cookies are readable by both the browser (client) AND the server (middleware).
-// This is the key difference from localStorage which is browser-only.
-// We use a simple, short-lived cookie — no HttpOnly so JS can read it for
-// attaching to API request headers.
-
+// ─── Cookie-based token store (accessible by middleware) ─────────────────────
 const COOKIE_NAME = 'meraki_token';
-const COOKIE_MAX_AGE = 60 * 60 * 8; // 8 hours in seconds
+const COOKIE_MAX_AGE = 60 * 60 * 8; // 8 hours
 
 export const tokenStore = {
   get: (): string | null => {
-    if (typeof document === 'undefined') return null; // SSR guard
+    if (typeof document === 'undefined') return null;
     const match = document.cookie
       .split('; ')
       .find((row) => row.startsWith(`${COOKIE_NAME}=`));
@@ -38,14 +41,12 @@ export const tokenStore = {
       `Max-Age=${COOKIE_MAX_AGE}`,
       'Path=/',
       'SameSite=Lax',
-      // Add Secure in production — omit for localhost dev
       ...(process.env.NODE_ENV === 'production' ? ['Secure'] : []),
     ].join('; ');
   },
 
   clear: () => {
     if (typeof document === 'undefined') return;
-    // Set Max-Age=0 to immediately expire the cookie
     document.cookie = `${COOKIE_NAME}=; Max-Age=0; Path=/; SameSite=Lax`;
   },
 };
@@ -118,7 +119,6 @@ class ApiClient {
       body: JSON.stringify({ email, password }),
       skipAuth: true,
     });
-    // Write token to cookie immediately on successful login
     if (res.success && res.data?.access_token) {
       tokenStore.set(res.data.access_token);
     }
@@ -148,7 +148,7 @@ class ApiClient {
     tokenStore.clear();
   }
 
-  // ─── RAG / Tutor turn ─────────────────────────────────────────────────────
+  // ─── RAG/Chat (Learn mode) ────────────────────────────────────────────────
   sendMessage(payload: RagTurnRequest) {
     return this.request<RagTurnResponse>(API_ENDPOINTS.RAG_TURN, {
       method: 'POST',
@@ -156,10 +156,57 @@ class ApiClient {
     });
   }
 
-  // ─── Session preferences ──────────────────────────────────────────────────
+  /**
+   * Upload voice recording for learn mode.
+   * Returns transcript + standard RAG response.
+   */
+  async uploadVoice(sessionId: string, audioBlob: Blob) {
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.webm');
+
+    // session_id as query param per backend signature
+    const url = `${API_ENDPOINTS.RAG_TURN_VOICE}?session_id=${sessionId}`;
+
+    return this.request<VoiceTurnResponse>(url, {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  // ─── Sessions ─────────────────────────────────────────────────────────────
+  createSession() {
+    return this.request<CreateSessionResponse>(API_ENDPOINTS.SESSIONS_CREATE, {
+      method: 'POST',
+    });
+  }
+
+  getSession(sessionId: string) {
+    return this.request<SessionDetailsResponse>(
+      API_ENDPOINTS.SESSIONS_GET(sessionId)
+    );
+  }
+
+  /**
+   * Switch session mode (learn/practice/review).
+   * If switching to review, prefers_video is forced to false.
+   */
+  switchSessionMode(sessionId: string, mode: 'learn' | 'practice' | 'review') {
+    return this.request<SessionModeUpdateResponse>(
+      API_ENDPOINTS.SESSIONS_MODE(sessionId),
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ current_mode: mode } as SessionModeUpdateRequest),
+      }
+    );
+  }
+
+  /**
+   * Toggle video preference for this session.
+   * Fails with 400 if session is in review mode.
+   */
   setVideoPreference(sessionId: string, prefersVideo: boolean) {
     return this.request<VideoToggleResponse>(
-      API_ENDPOINTS.SESSION_VIDEO(sessionId),
+      API_ENDPOINTS.SESSIONS_VIDEO(sessionId),
       {
         method: 'PATCH',
         body: JSON.stringify({ prefers_video: prefersVideo } as VideoToggleRequest),
@@ -167,28 +214,52 @@ class ApiClient {
     );
   }
 
-  // ─── Mode-sessions ────────────────────────────────────────────────────────
-  startModeSession(payload: ModeSessionStartRequest) {
-    return this.request(API_ENDPOINTS.MODE_SESSION_START, {
+  endSession(sessionId: string) {
+    return this.request<EndSessionResponse>(
+      API_ENDPOINTS.SESSIONS_END(sessionId),
+      {
+        method: 'POST',
+      }
+    );
+  }
+
+  // ─── User Profile ─────────────────────────────────────────────────────────
+  getUserProfile() {
+    return this.request<UserProfileResponse>(API_ENDPOINTS.USERS_ME);
+  }
+
+  selectAvatar(avatarId: 'amy' | 'josh') {
+    return this.request<AvatarSelectResponse>(API_ENDPOINTS.USERS_AVATAR, {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ avatar_id: avatarId } as AvatarSelectRequest),
     });
   }
 
-  sendModeSessionTurn(sessionId: string, payload: ModeSessionTurnRequest) {
-    return this.request(API_ENDPOINTS.MODE_SESSION_TURN(sessionId), {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+  updateAvatar(avatarId: 'amy' | 'josh') {
+    return this.request<AvatarSelectResponse>(
+      API_ENDPOINTS.USERS_AVATAR_UPDATE,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ avatar_id: avatarId } as AvatarSelectRequest),
+      }
+    );
   }
 
-  // ─── Voice upload ─────────────────────────────────────────────────────────
-  uploadAudio(audioBlob: Blob) {
-    const formData = new FormData();
-    formData.append('audio', audioBlob, 'recording.wav');
-    return this.request<{ transcript: string }>('/whisper/transcribe', {
+  // ─── Feedback ─────────────────────────────────────────────────────────────
+  submitSessionSurvey(payload: SessionSurveyRequest) {
+    return this.request<FeedbackResponse>(
+      API_ENDPOINTS.FEEDBACK_SESSION_SURVEY,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  submitUserFeedback(payload: UserFeedbackRequest) {
+    return this.request<FeedbackResponse>(API_ENDPOINTS.FEEDBACK_USER, {
       method: 'POST',
-      body: formData,
+      body: JSON.stringify(payload),
     });
   }
 }

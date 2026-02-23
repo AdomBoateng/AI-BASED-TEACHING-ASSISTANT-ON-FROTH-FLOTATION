@@ -1,9 +1,14 @@
 export interface User {
   id: string;
   email: string;
-  name?: string;
-  avatar?: string;
-  createdAt?: Date;
+  role?: string;
+  avatar_id?: string;
+  avatar_provider?: string;
+  avatar_gender?: 'male' | 'female';
+  voice_provider?: string;
+  voice_id?: string;
+  voice_gender?: 'male' | 'female';
+  created_at?: string;
 }
 
 export interface UserPreferences {
@@ -11,12 +16,11 @@ export interface UserPreferences {
   language: string;
   subtitlesEnabled: boolean;
   autoPlayVideo: boolean;
-  prefersVideo: boolean;   // mirrors backend sessions.prefers_video
+  prefersVideo: boolean;
 }
 
 export interface AuthSession {
-  user: User;
   accessToken: string;
-  refreshToken: string;
-  expiresIn: number;
+  refreshToken?: string;
+  expiresAt?: number;
 }

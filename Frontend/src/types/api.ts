@@ -1,7 +1,3 @@
-// ─── Generic wrapper ────────────────────────────────────────────────────────
-// The backend does NOT wrap responses in { success, data } — it returns data
-// directly (or throws an HTTPException). We keep ApiResponse only as an
-// internal helper for the client's error boundary.
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
@@ -11,50 +7,75 @@ export interface ApiResponse<T> {
   };
 }
 
-// ─── Auth ────────────────────────────────────────────────────────────────────
-export interface AuthUser {
-  id: string;
-  email: string;
-}
-
+// ─── Auth ─────────────────────────────────────────────────────────────────────
 export interface LoginResponse {
-  user: AuthUser;
+  user: {
+    id: string;
+    email: string;
+  };
   access_token: string;
-  refresh_token: string;
-  expires_in: number;
-  token_type: 'bearer';
+  refresh_token?: string;
+  expires_in?: number;
+  token_type: string;
 }
 
 export interface SignupResponse {
-  user: AuthUser;
-  session: {
-    access_token: string | null;
-    refresh_token: string | null;
-    expires_in: number | null;
+  user: {
+    id?: string;
+    email?: string;
   };
-  note: string;
+  session: {
+    access_token?: string | null;
+  };
+  note?: string;
 }
 
-// ─── RAG / Tutor turn  (/rag/turn) ───────────────────────────────────────────
-// Request body
+// ─── RAG/Chat ─────────────────────────────────────────────────────────────────
 export interface RagTurnRequest {
   session_id: string;
-  mode: 'learn';     // only 'learn' goes to /rag/turn
+  mode: 'learn';  // Only "learn" allowed in /rag/turn
   message: string;
 }
 
-// Response — backend returns { mode, response, ...delivery }
-// delivery comes from maybe_generate_video():
-//   text-only  →  { response_format: "text" }
-//   video      →  { response_format: "video", video_url: string }
 export interface RagTurnResponse {
   mode: 'learn';
-  response: string;           // tutor text
+  response: string;
   response_format: 'text' | 'video';
   video_url?: string | null;
+  audio_url?: string | null;  // NEW: audio URL when video is generated
+  did_payload?: any;          // Optional D-ID raw response
 }
 
-// ─── Session video toggle  (PATCH /sessions/:id/video) ───────────────────────
+export interface VoiceTurnResponse extends RagTurnResponse {
+  transcript: string;  // The transcribed text from audio
+}
+
+// ─── Sessions ─────────────────────────────────────────────────────────────────
+export interface CreateSessionResponse {
+  session_id: string;
+  current_mode: 'learn' | 'practice' | 'review';
+  prefers_video: boolean;
+  started_at: string;
+}
+
+export interface SessionDetailsResponse {
+  session_id: string;
+  current_mode: 'learn' | 'practice' | 'review';
+  prefers_video: boolean;
+  started_at: string;
+  ended_at?: string | null;
+}
+
+export interface SessionModeUpdateRequest {
+  current_mode: 'learn' | 'practice' | 'review';
+}
+
+export interface SessionModeUpdateResponse {
+  session_id: string;
+  current_mode: 'learn' | 'practice' | 'review';
+  prefers_video: boolean;  // Will be false if mode is "review"
+}
+
 export interface VideoToggleRequest {
   prefers_video: boolean;
 }
@@ -64,24 +85,67 @@ export interface VideoToggleResponse {
   prefers_video: boolean;
 }
 
-// ─── Mode-sessions (practice / review) ───────────────────────────────────────
+export interface EndSessionResponse {
+  session_id: string;
+  status: 'ended';
+  ended_at: string;
+}
+
+// ─── User Profile ─────────────────────────────────────────────────────────────
+export interface UserProfileResponse {
+  id: string;
+  email: string;
+  role: string;
+  avatar_id: string;
+  avatar_provider: string;
+  avatar_gender: 'male' | 'female';
+  voice_provider: string;
+  voice_id: string;
+  voice_gender: 'male' | 'female';
+  created_at: string;
+}
+
+export interface AvatarSelectRequest {
+  avatar_id: 'amy' | 'josh';
+}
+
+export interface AvatarSelectResponse {
+  status: 'ok';
+  avatar_id: string;
+  voice_id: string;
+  did_presenter_id: string;
+}
+
+// ─── Feedback ─────────────────────────────────────────────────────────────────
+export interface SessionSurveyRequest {
+  session_id: string;
+  clarity_rating: number;      // 1-5
+  helpfulness_rating: number;  // 1-5
+  confidence_rating: number;   // 1-5
+  overall_rating: number;      // 1-5
+}
+
+export interface UserFeedbackRequest {
+  session_id?: string | null;
+  feedback_type: 'bug' | 'suggestion' | 'content' | 'ux' | 'other';
+  message: string;
+}
+
+export interface FeedbackResponse {
+  status: 'ok';
+  id?: string | null;
+}
+
+// ─── Mode Sessions (Practice/Review) ──────────────────────────────────────────
+// These are inferred from models.py but routes not provided yet
 export interface ModeSessionStartRequest {
   session_id: string;
   mode: 'practice' | 'review';
   session_type: string;
   difficulty?: 'Basic' | 'Intermediate' | 'Advanced';
-  total_items?: number;
+  total_items?: number | null;
 }
 
 export interface ModeSessionTurnRequest {
   message: string;
-}
-
-// ─── Paginated (utility) ─────────────────────────────────────────────────────
-export interface PaginatedResponse<T> {
-  data: T[];
-  total: number;
-  page: number;
-  pageSize: number;
-  hasMore: boolean;
 }
