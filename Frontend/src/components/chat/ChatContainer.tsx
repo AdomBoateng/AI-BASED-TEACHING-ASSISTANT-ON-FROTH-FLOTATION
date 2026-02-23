@@ -29,15 +29,17 @@ export function ChatContainer() {
   useEffect(() => {
     setMounted(true);
     if (isMobile) setSidebarOpen(false);
-  }, []); 
+  }, []); // eslint-disable-line
 
   if (!mounted) return null;
 
   const showWelcome = !currentSessionId;
 
   return (
-
+    // Root: h-screen keeps everything at viewport height, overflow-hidden prevents page scroll
     <div className="flex h-screen overflow-hidden bg-background">
+      
+      {/* Mobile overlay */}
       {isMobile && sidebarOpen && (
         <div
           className="fixed inset-0 z-20 bg-black/50"
@@ -45,6 +47,7 @@ export function ChatContainer() {
         />
       )}
 
+      {/* Sidebar */}
       <aside
         className={`
           flex-shrink-0 overflow-hidden border-r border-border/40
@@ -58,10 +61,12 @@ export function ChatContainer() {
         </div>
       </aside>
 
+      {/* Main area - min-h-0 is CRITICAL for nested scroll to work */}
       <main className="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
         <Header />
 
         {showWelcome ? (
+          // Welcome screen
           <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 overflow-y-auto">
             <div className="w-full max-w-xl text-center">
               <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20">
@@ -74,6 +79,7 @@ export function ChatContainer() {
                 Your AI tutor for froth flotation. Ask questions, work through scenarios, or test your knowledge.
               </p>
 
+              {/* Mode cards */}
               <div className="mt-8 grid grid-cols-3 gap-3">
                 {[
                   { icon: BookOpen, label: 'Learn', desc: 'Explanations & concepts', color: 'text-blue-400' },
@@ -91,6 +97,7 @@ export function ChatContainer() {
                 ))}
               </div>
 
+              {/* Quick starts */}
               <div className="mt-8">
                 <p className="mb-3 text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
                   Quick starts
@@ -111,6 +118,10 @@ export function ChatContainer() {
             </div>
           </div>
         ) : (
+          /* Active chat wrapper
+             CRITICAL: min-h-0 allows MessageList to shrink and scroll internally.
+             Without it, this div grows to fit content and scroll never triggers.
+          */
           <div className="flex flex-1 flex-col min-h-0">
             <MessageList />
             <InputArea />
