@@ -56,7 +56,10 @@ async def rag_turn(payload: RagTurnRequest, user=Depends(auth_guard)):
         )
 
     # Ensure session exists and belongs to user
-    ensure_session(payload.session_id, user["id"], current_mode="learn")
+    try:
+        ensure_session(payload.session_id, user["id"], current_mode="learn")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     _set_session_mode(payload.session_id, user["id"], "learn")
 
     memory = load_memory(payload.session_id)

@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 from typing import List, Optional
+from uuid import UUID
 from app.db.supabase import get_supabase
 
 
 def ensure_session(session_id: str, user_id: str, current_mode: str = "learn") -> None:
+    try:
+        UUID(str(session_id))
+    except (ValueError, TypeError):
+        raise ValueError("Invalid session_id format. Expected UUID.")
+
     supabase = get_supabase()
     res = supabase.table("sessions").select("id,user_id").eq("id", session_id).execute()
     if not res.data:
@@ -74,7 +80,7 @@ def log_conversation(
     tutor_response: str,
     response_format: str,
     video_url: Optional[str] = None,
-    audio_url: Optional[str] = None,  # ✅ NEW
+    audio_url: Optional[str] = None, 
 ) -> None:
     supabase = get_supabase()
     payload = {
@@ -85,6 +91,6 @@ def log_conversation(
         "tutor_response": tutor_response,
         "response_format": response_format,
         "video_url": video_url,
-        "audio_url": audio_url,  # ✅ store audio URL for tracing
+        "audio_url": audio_url,  
     }
     supabase.table("conversations").insert(payload).execute()

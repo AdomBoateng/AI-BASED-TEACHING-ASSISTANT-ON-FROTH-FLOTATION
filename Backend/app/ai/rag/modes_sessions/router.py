@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
 from app.core.auth import auth_guard
@@ -36,6 +37,11 @@ def _ensure_chat_session_ownership(session_id: str, user_id: str, default_mode: 
     Ensures the chat session exists and belongs to the user.
     If it doesn't exist, create it (Swagger-friendly).
     """
+    try:
+        UUID(str(session_id))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid session_id format. Expected UUID.")
+
     supabase = get_supabase()
     s = (
         supabase.table("sessions")
