@@ -124,7 +124,7 @@ async def _deliver_and_log(
 
     # If your conversations table has audio_url, log_conversation should accept it.
     # If your current log_conversation signature doesn't accept audio_url, remove it.
-    log_conversation(
+    await log_conversation(
         session_id=session_id,
         user_id=user_id,
         mode=mode,
@@ -158,7 +158,7 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
     # Policy:
     # - review always text
     # - practice follows session prefers_video
-    response_format = response_format_for_mode(payload.session_id, mode)
+    response_format = await response_format_for_mode(payload.session_id, mode)
 
     ms = (
         supabase.table("mode_sessions")
@@ -200,7 +200,7 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
         }).execute()
 
         # Log prompt (text-only)
-        log_conversation(
+        await log_conversation(
             session_id=payload.session_id,
             user_id=user["id"],
             mode="review",
@@ -270,7 +270,7 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
     mode = ms["mode"]
     stype = ms["session_type"]
 
-    response_format = response_format_for_mode(session_id, mode)
+    response_format = await response_format_for_mode(session_id, mode)
 
     st = (
         supabase.table("session_state")
@@ -398,7 +398,7 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
     )
 
     # review is text-only
-    log_conversation(
+    await log_conversation(
         session_id=session_id,
         user_id=user["id"],
         mode="review",
@@ -447,7 +447,7 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
         "current_item": current_item + 1
     }).eq("id", mode_session_id).execute()
 
-    log_conversation(
+    await log_conversation(
         session_id=session_id,
         user_id=user["id"],
         mode="review",
