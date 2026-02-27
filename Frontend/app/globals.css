@@ -123,6 +123,19 @@ body {
     animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 
+  @keyframes spin-slow {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .animate-spin-slow {
+    animation: spin-slow 3s linear infinite;
+  }
+
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
@@ -131,4 +144,124 @@ body {
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
+  /* Message animations */
+  .animate-in {
+    animation: fade-in 0.3s ease-in-out forwards;
+  }
+
+  .fade-in {
+    animation: fade-in 0.3s ease-in-out;
+  }
+
+  .slide-in-from-bottom-2 {
+    animation: slide-in-from-bottom 0.3s ease-out;
+  }
+
+  @keyframes slide-in-from-bottom {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+/* Meraki Markdown Styling */
+.meraki-markdown {
+  @apply text-foreground;
+}
+
+.meraki-markdown > * {
+  @apply mb-4 last:mb-0;
+}
+
+.meraki-markdown h1 {
+  @apply text-2xl font-bold text-foreground mt-6 mb-4 leading-tight;
+}
+
+.meraki-markdown h2 {
+  @apply text-xl font-bold text-foreground mt-5 mb-3 leading-tight;
+}
+
+.meraki-markdown h3 {
+  @apply text-lg font-semibold text-foreground mt-4 mb-2;
+}
+
+.meraki-markdown h4,
+.meraki-markdown h5,
+.meraki-markdown h6 {
+  @apply font-semibold text-foreground mb-2;
+}
+
+.meraki-markdown p {
+  @apply text-sm leading-relaxed text-foreground/90 mb-3;
+}
+
+.meraki-markdown strong {
+  @apply font-semibold text-foreground;
+}
+
+.meraki-markdown em {
+  @apply italic text-foreground;
+}
+
+.meraki-markdown a {
+  @apply text-primary hover:text-primary/80 underline transition-colors;
+}
+
+.meraki-markdown ul,
+.meraki-markdown ol {
+  @apply ml-4 mb-4 space-y-1;
+}
+
+.meraki-markdown li {
+  @apply text-sm leading-relaxed text-foreground/90;
+}
+
+.meraki-markdown ul li {
+  @apply list-disc;
+}
+
+.meraki-markdown ol li {
+  @apply list-decimal;
+}
+
+.meraki-markdown blockquote {
+  @apply border-l-4 border-primary/40 bg-primary/5 pl-4 py-3 rounded-r-lg mb-4 italic text-foreground/75;
+}
+
+.meraki-markdown code {
+  @apply bg-card/60 px-2 py-1 rounded text-xs font-mono text-primary/90 border border-border/30;
+}
+
+.meraki-markdown pre {
+  @apply bg-card/80 border border-border/30 rounded-lg p-4 overflow-x-auto mb-4;
+}
+
+.meraki-markdown pre code {
+  @apply bg-transparent px-0 py-0 border-0 text-xs text-foreground/90 font-mono;
+}
+
+.meraki-markdown table {
+  @apply w-full border-collapse mb-4;
+}
+
+.meraki-markdown th {
+  @apply bg-primary/10 px-4 py-2 text-left text-sm font-semibold text-foreground border border-border/30;
+}
+
+.meraki-markdown td {
+  @apply px-4 py-2 text-sm border border-border/30 text-foreground/90;
+}
+
+.meraki-markdown tr:hover {
+  @apply bg-card/50;
+}
+
+.meraki-markdown hr {
+  @apply my-6 border-t border-border/30;
 }

@@ -8,12 +8,14 @@ import { LoadingState } from './LoadingState';
 import { BookOpen } from 'lucide-react';
 
 export function MessageList() {
-  const messages = useChatStore((s) => s.messages);
-  const isLoadingMessage = useChatStore((s) => s.isLoadingMessage);
+  const messages = useChatStore((state) => state.messages);
+  const isLoadingMessage = useChatStore((state) => state.isLoadingMessage);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 0);
   }, [messages, isLoadingMessage]);
 
   if (messages.length === 0) {
@@ -33,10 +35,6 @@ export function MessageList() {
   }
 
   return (
-    // FIX: flex-1 min-h-0 overflow-y-auto is the scroll fix.
-    // flex-1 takes remaining space, min-h-0 allows shrinking below content
-    // size (critical in flex columns), overflow-y-auto enables the scrollbar.
-    // No ScrollArea wrapper needed — native overflow is more reliable here.
     <div className="flex-1 min-h-0 overflow-y-auto">
       <div className="mx-auto max-w-3xl flex flex-col gap-6 px-4 py-6">
         {messages.map((message) => (

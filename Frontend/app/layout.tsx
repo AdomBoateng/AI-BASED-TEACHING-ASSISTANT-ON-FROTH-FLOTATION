@@ -1,3 +1,6 @@
+// FILE PATH: app/layout.tsx
+// FIXED: Removed h-screen flex flex-col from body
+
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 
@@ -31,6 +34,8 @@ export default function RootLayout({
       <head>
         <meta name="theme-color" content="#4f46e5" />
       </head>
+      {/* FIXED: Removed h-screen flex flex-col - these break the scroll chain.
+          ChatContainer already has h-screen and manages its own flex layout. */}
       <body className="font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <QueryProvider>

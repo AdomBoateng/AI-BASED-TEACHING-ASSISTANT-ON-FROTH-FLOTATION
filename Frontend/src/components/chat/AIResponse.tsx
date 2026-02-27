@@ -5,6 +5,7 @@ import { VideoPlayer } from './VideoPlayer';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Sparkles } from 'lucide-react';
 import type { Message } from '@/types';
+import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 
 interface AIResponseProps {
   message: Message;
@@ -44,23 +45,19 @@ export function AIResponse({ message }: AIResponseProps) {
                 <p className="text-xs text-muted-foreground font-medium mb-1 uppercase tracking-wider">
                   Transcript
                 </p>
-                <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">
-                  {message.content}
-                </p>
+                <MarkdownRenderer content={message.content} />
               </div>
             )}
           </div>
         ) : (
           // ── Text response ───────────────────────────────────────────────
           <div className="rounded-xl bg-card border border-border/30 px-4 py-3 shadow-sm">
-            <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
-              {message.content}
-            </p>
+            <MarkdownRenderer content={message.content} />
           </div>
         )}
 
         {/* Timestamp */}
-        <span className="text-[11px] text-muted-foreground/50 pl-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <span className="text-xs text-muted-foreground/50 pl-1 opacity-0 group-hover:opacity-100 transition-opacity">
           {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </span>
       </div>
