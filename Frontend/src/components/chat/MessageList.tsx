@@ -1,3 +1,6 @@
+// FILE PATH: src/components/chat/MessageList.tsx
+// FINAL VERSION: Clean scroll implementation
+
 'use client';
 
 import { useEffect, useRef } from 'react';
@@ -8,14 +11,12 @@ import { LoadingState } from './LoadingState';
 import { BookOpen } from 'lucide-react';
 
 export function MessageList() {
-  const messages = useChatStore((state) => state.messages);
-  const isLoadingMessage = useChatStore((state) => state.isLoadingMessage);
+  const messages = useChatStore((s) => s.messages);
+  const isLoadingMessage = useChatStore((s) => s.isLoadingMessage);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setTimeout(() => {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 0);
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoadingMessage]);
 
   if (messages.length === 0) {
@@ -35,6 +36,7 @@ export function MessageList() {
   }
 
   return (
+    // Scroll container: takes remaining space, scrolls internally
     <div className="flex-1 min-h-0 overflow-y-auto">
       <div className="mx-auto max-w-3xl flex flex-col gap-6 px-4 py-6">
         {messages.map((message) => (
@@ -53,7 +55,6 @@ export function MessageList() {
           </div>
         )}
 
-        {/* Scroll anchor */}
         <div ref={bottomRef} className="h-1" />
       </div>
     </div>

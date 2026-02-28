@@ -1,7 +1,10 @@
-import Link from 'next/link';
-import { GraduationCap } from 'lucide-react';
+// FILE PATH: app/auth/login/page.tsx
+// WITH theme toggle in top-right corner
+
 import { AuthBrandPanel } from '@/components/auth/AuthBrandPanel';
 import { LoginForm } from '@/components/auth/LoginForm';
+import { ThemeToggle } from '@/components/common/ThemeToggle';
+import Link from 'next/link';
 
 export const metadata = {
   title: 'Sign in — Meraki',
@@ -10,38 +13,37 @@ export const metadata = {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="flex min-h-screen bg-background">
+      {/* Theme toggle - fixed in top-right */}
+      <div className="fixed top-4 right-4 z-50">
+        <ThemeToggle />
+      </div>
 
-      {/* Left branding panel — pure server HTML, no JS */}
-      <AuthBrandPanel variant="login" />
+      {/* Left panel - branding (hidden on mobile) */}
+      <div className="hidden lg:flex lg:w-1/2">
+        <AuthBrandPanel variant="login" />
+      </div>
 
-      {/* Right panel */}
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-12">
+      {/* Right panel - form */}
+      <div className="flex flex-1 items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
-
-          {/* Mobile-only logo */}
-          <div className="flex items-center gap-3 mb-8 lg:hidden">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/20">
-              <GraduationCap className="h-5 w-5 text-primary" />
-            </div>
-            <span className="text-lg font-bold text-foreground">Meraki</span>
-          </div>
-
-          {/* Heading — server-rendered, no JS */}
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-foreground tracking-tight">Welcome back</h2>
-            <p className="mt-1.5 text-sm text-muted-foreground">
+          <div className="mb-8 text-center">
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">
+              Welcome back
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground">
               Sign in to continue your learning journey
             </p>
           </div>
 
-          {/* Client boundary — only this part ships JS */}
           <LoginForm />
 
-          {/* Footer link — server-rendered */}
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            Don&apos;t have an account?{' '}
-            <Link href="/auth/signup" className="text-primary hover:underline font-medium">
+            Don't have an account?{' '}
+            <Link
+              href="/auth/signup"
+              className="font-medium text-primary hover:underline"
+            >
               Create one
             </Link>
           </p>

@@ -1,49 +1,49 @@
-import Link from 'next/link';
-import { GraduationCap } from 'lucide-react';
+// FILE PATH: app/auth/signup/page.tsx
+// WITH theme toggle in top-right corner
+
 import { AuthBrandPanel } from '@/components/auth/AuthBrandPanel';
 import { SignupForm } from '@/components/auth/SignupForm';
+import { ThemeToggle } from '@/components/common/ThemeToggle';
+import Link from 'next/link';
 
 export const metadata = {
   title: 'Create account — Meraki',
-  description: 'Create your Meraki account and start learning froth flotation.',
+  description: 'Create your Meraki account to start learning.',
 };
 
 export default function SignupPage() {
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="flex min-h-screen bg-background">
+      {/* Theme toggle - fixed in top-right */}
+      <div className="fixed top-4 right-4 z-50">
+        <ThemeToggle />
+      </div>
 
-      {/* Left branding panel — server-rendered */}
-      <AuthBrandPanel variant="signup" />
+      {/* Left panel - branding (hidden on mobile) */}
+      <div className="hidden lg:flex lg:w-1/2">
+        <AuthBrandPanel variant="signup" />
+      </div>
 
-      {/* Right panel */}
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-12">
+      {/* Right panel - form */}
+      <div className="flex flex-1 items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
-
-          {/* Mobile-only logo */}
-          <div className="flex items-center gap-3 mb-8 lg:hidden">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/20">
-              <GraduationCap className="h-5 w-5 text-primary" />
-            </div>
-            <span className="text-lg font-bold text-foreground">Meraki</span>
-          </div>
-
-          {/* Heading — server-rendered */}
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-foreground tracking-tight">
+          <div className="mb-8 text-center">
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">
               Create your account
-            </h2>
-            <p className="mt-1.5 text-sm text-muted-foreground">
-              Get started with Meraki in seconds
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Start your AI-powered learning journey today
             </p>
           </div>
 
-          {/* Client boundary */}
           <SignupForm />
 
-          {/* Footer link — server-rendered */}
           <p className="mt-6 text-center text-xs text-muted-foreground">
             Already have an account?{' '}
-            <Link href="/auth/login" className="text-primary hover:underline font-medium">
+            <Link
+              href="/auth/login"
+              className="font-medium text-primary hover:underline"
+            >
               Sign in
             </Link>
           </p>

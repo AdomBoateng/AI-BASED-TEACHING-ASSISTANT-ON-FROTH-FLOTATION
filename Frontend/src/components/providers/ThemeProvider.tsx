@@ -24,7 +24,6 @@ export function ThemeProvider({
       defaultTheme={defaultTheme}
       enableSystem={enableSystem}
       disableTransitionOnChange={disableTransitionOnChange}
-      forcedTheme={defaultTheme}
     >
       {children}
     </NextThemesProvider>

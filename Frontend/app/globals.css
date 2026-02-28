@@ -48,6 +48,7 @@ body {
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
+
   .dark {
     /* Meraki AI Theme - Dark Mode */
     --background: 0 0% 2%;
@@ -95,6 +96,11 @@ body {
 }
 
 @layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Animations */
   @keyframes fade-in {
     from {
       opacity: 0;
