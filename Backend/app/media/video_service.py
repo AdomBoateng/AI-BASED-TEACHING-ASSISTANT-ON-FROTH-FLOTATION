@@ -8,6 +8,7 @@ from app.media.text_cleaner import clean_for_tts
 from app.media.tts_service import tts_to_mp3_bytes
 from app.media.storage_service import upload_audio_and_get_url
 from app.media.did_service import create_clip_from_audio
+from app.utils.srt_vtt import convert_srt_to_vtt
 
 logger = logging.getLogger(__name__)
 
@@ -128,9 +129,15 @@ async def maybe_generate_video(
 
     # try common fields; keep entire payload as fallback
     video_url = clip.get("result_url") or clip.get("resultUrl") or clip.get("url") or clip.get("result")
+    subtitle_url = clip.get("subtitles_url")
+    logger.info(f"Video ready. Subtitles found: {bool(subtitle_url)}")
+    
+    # Convert to VTT string so the frontend can use it as a Blob or Data URI
+    vtt_data = convert_srt_to_vtt(subtitle_url) if subtitle_url else ""
     return {
         "response_format": "video",
         "audio_url": audio_url,
         "video_url": video_url,
+        "subtitle_url": vtt_data,
         "did_payload": clip,  # optional: keep for debugging
     }

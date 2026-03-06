@@ -16,29 +16,33 @@ def _safe_json_loads(text: str) -> Dict[str, Any]:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    
+
     # Try to extract JSON from markdown code blocks
     import re
-    json_match = re.search(r'```(?:json)?\s*({.*?})\s*```', text, re.DOTALL)
+
+    json_match = re.search(r"```(?:json)?\s*({.*?})\s*```", text, re.DOTALL)
     if json_match:
         try:
             return json.loads(json_match.group(1))
         except json.JSONDecodeError:
             pass
-    
+
     # Try to find JSON object anywhere in the text
-    json_match = re.search(r'{[^{}]*(?:{[^{}]*}[^{}]*)*}', text, re.DOTALL)
+    json_match = re.search(r"{[^{}]*(?:{[^{}]*}[^{}]*)*}", text, re.DOTALL)
     if json_match:
         try:
             return json.loads(json_match.group(0))
         except json.JSONDecodeError:
             pass
-    
-    raise ValueError(f"Could not extract valid JSON from model output. Got: {text[:200]}")
+
+    raise ValueError(
+        f"Could not extract valid JSON from model output. Got: {text[:200]}"
+    )
 
 
 def _json_only(text: str) -> Dict[str, Any]:
     return _safe_json_loads(text)
+
 
 def adjust_difficulty(current: str | None, score: float) -> str:
     levels = ["Basic", "Intermediate", "Advanced"]
@@ -51,10 +55,13 @@ def adjust_difficulty(current: str | None, score: float) -> str:
         i -= 1
     return levels[i]
 
-async def generate_practice_scenario(memory: List[str] | None = None) -> Tuple[Dict[str, Any], List[str]]:
+
+async def generate_practice_scenario(
+    memory: List[str] | None = None,
+) -> Tuple[Dict[str, Any], List[str]]:
     seed = "Generate a structured froth flotation practice scenario in JSON."
 
-    contexts = retrieve_context(query=seed, mode="practice", top_k=6)
+    contexts = await retrieve_context(query=seed, mode="practice", top_k=6)
 
     prompt = f"""
 You are generating a structured PRACTICE scenario for froth flotation.
@@ -90,6 +97,7 @@ REFERENCE MATERIAL:
     scenario = _json_only(raw)
     return scenario, contexts
 
+
 def format_practice_prompt(scenario: Dict[str, Any], step: int) -> str:
     idx = step - 1
     data_lines = "\n".join([f"- {x}" for x in scenario.get("available_data", [])])
@@ -103,6 +111,7 @@ def format_practice_prompt(scenario: Dict[str, Any], step: int) -> str:
         f"**Available Data:**\n{data_lines}\n\n"
         f"**Guided Question {step}:**\n{question}\n"
     )
+
 
 async def evaluate_practice_answer(
     scenario: Dict[str, Any],
@@ -147,9 +156,12 @@ Rules:
     raw = await generate_response(prompt=prompt, mode="review")  # deterministic
     return _json_only(raw)
 
-async def generate_review_question(memory: List[str] | None = None, difficulty: str = "Basic") -> Tuple[Dict[str, Any], List[str]]:
+
+async def generate_review_question(
+    memory: List[str] | None = None, difficulty: str = "Basic"
+) -> Tuple[Dict[str, Any], List[str]]:
     seed = f"Generate a structured froth flotation assessment question ({difficulty}) in JSON."
-    contexts = retrieve_context(query=seed, mode="review", top_k=6)
+    contexts = await retrieve_context(query=seed, mode="review", top_k=6)
 
     prompt = f"""
 You are generating a structured REVIEW assessment question.
@@ -177,6 +189,7 @@ REFERENCE MATERIAL:
     qobj = _json_only(raw)
     return qobj, contexts
 
+
 def format_review_prompt(qobj: Dict[str, Any]) -> str:
     return (
         f"### REVIEW ASSESSMENT\n"
@@ -186,6 +199,7 @@ def format_review_prompt(qobj: Dict[str, Any]) -> str:
         f"Question Type: {qobj.get('question_type','ShortAnswer')}\n\n"
         f"**Question:**\n{qobj.get('question','')}\n"
     )
+
 
 async def evaluate_review_answer(
     qobj: Dict[str, Any],
@@ -231,10 +245,7 @@ Rules:
 
 
 async def query_rag(
-    user_message: str,
-    mode: str,
-    memory: List[str] | None = None,
-    top_k: int = 5
+    user_message: str, mode: str, memory: List[str] | None = None, top_k: int = 5
 ) -> Union[Dict[str, Any], Dict[str, str]]:
     """
     Query-time RAG:
@@ -245,14 +256,11 @@ async def query_rag(
     """
 
     # 1️⃣ Retrieve context (Pinecone)
-    context = retrieve_context(query=user_message, mode=mode, top_k=top_k)
+    context = await retrieve_context(query=user_message, mode=mode, top_k=top_k)
 
     # 2️⃣ Build prompt (your structured architecture)
     prompt = build_prompt(
-        user_message=user_message,
-        context=context,
-        mode=mode,
-        memory=memory
+        user_message=user_message, context=context, mode=mode, memory=memory
     )
 
     # 3️⃣ Call Claude Opus
@@ -275,20 +283,16 @@ async def query_rag(
             raise ValueError(f"Invalid score in review output: {score}")
 
         if not isinstance(feedback, str) or not feedback.strip():
-            raise ValueError("Invalid feedback in review output (empty or not a string).")
+            raise ValueError(
+                "Invalid feedback in review output (empty or not a string)."
+            )
 
         return {
             "mode": mode,
             "verdict": verdict,
             "score": float(score),
-            "feedback": feedback.strip()
+            "feedback": feedback.strip(),
         }
 
     # 5️⃣ Learn/Practice normal response
-    return {
-        "mode": mode,
-        "response": raw_output.strip()
-    }
-
-    
-    
+    return {"mode": mode, "response": raw_output.strip()}

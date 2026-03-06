@@ -27,16 +27,22 @@ if index_name not in available_indexes:
 
 index = pc.Index(index_name)
 
+
 def _normalize_embedding(embedding):
     if isinstance(embedding, str):
         embedding = json.loads(embedding)
     return [float(value) for value in embedding]
 
 
+def _chunk_list(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i : i + n]
+
+
 def upsert_vectors(embeddings, chunks, namespace):
     ids = []
-
     vectors = []
+
     for emb, chunk in zip(embeddings, chunks):
         pid = str(uuid.uuid4())
         ids.append(pid)
@@ -44,11 +50,17 @@ def upsert_vectors(embeddings, chunks, namespace):
         topic = chunk.get("topic")
         if topic is None:
             topic = ""
-        vectors.append((pid, emb, {
-            "mode": chunk["mode"],
-            "topic": topic,
-            "text": chunk.get("text", "")
-        }))
+        vectors.append(
+            (
+                pid,
+                emb,
+                {"mode": chunk["mode"], "topic": topic, "text": chunk.get("text", "")},
+            )
+        )
 
-    index.upsert(vectors=vectors, namespace=namespace)
+    # Pinecone recommended batch size is ~100 vectors for metadata-heavy upserts
+    batch_size = 100
+    for batch in _chunk_list(vectors, batch_size):
+        index.upsert(vectors=batch, namespace=namespace)
+
     return ids

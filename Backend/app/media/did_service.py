@@ -37,6 +37,8 @@ def create_clip_from_audio(
     stitch: bool = True,
     pad_audio: float = 0.5,
     result_format: str = "mp4",
+    subtitle: bool = True,
+    subtitles: bool = True,
     timeout_seconds: int = 360,      # increased default
     poll_interval: float = 2.5,
 ) -> Dict[str, Any]:
@@ -51,12 +53,14 @@ def create_clip_from_audio(
         "script": {
             "type": "audio",
             "audio_url": audio_url,
+            "subtitles": subtitles,
         },
         "config": {
             "fluent": fluent,
             "stitch": stitch,
             "pad_audio": pad_audio,
             "result_format": result_format,
+            "subtitle": subtitle
         },
     }
     if title:

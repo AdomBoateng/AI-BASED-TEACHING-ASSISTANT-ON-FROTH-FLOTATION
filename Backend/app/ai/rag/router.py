@@ -3,7 +3,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
-from anthropic._exceptions import OverloadedError, RateLimitError, APITimeoutError, APIError
+from anthropic._exceptions import (
+    OverloadedError,
+    RateLimitError,
+    APITimeoutError,
+    APIError,
+)
 
 from app.core.auth import auth_guard
 from app.core.chat_repo import (
@@ -12,22 +17,23 @@ from app.core.chat_repo import (
     log_conversation,
     response_format_for_mode,
 )
-from app.db.supabase import get_supabase
+from app.db.supabase import get_async_supabase
 from app.media.video_service import maybe_generate_video
 from app.media.stt_service import transcribe_audio
 from app.models.models import RagTurnRequest
 from .service import query_rag
+import asyncio
 
 router = APIRouter(prefix="/rag", tags=["RAG"])
 
 
-def _set_session_mode(session_id: str, user_id: str, mode: str) -> None:
+async def _set_session_mode(session_id: str, user_id: str, mode: str) -> None:
     """
     Keeps sessions.current_mode consistent with actual usage.
     Also enforces ownership.
     """
-    supabase = get_supabase()
-    res = (
+    supabase = await get_async_supabase()
+    res = await (
         supabase.table("sessions")
         .select("id,user_id,current_mode")
         .eq("id", session_id)
@@ -42,7 +48,9 @@ def _set_session_mode(session_id: str, user_id: str, mode: str) -> None:
         raise HTTPException(status_code=403, detail="Not allowed")
 
     if (row.get("current_mode") or "").lower().strip() != mode:
-        supabase.table("sessions").update({"current_mode": mode}).eq("id", session_id).execute()
+        await supabase.table("sessions").update({"current_mode": mode}).eq(
+            "id", session_id
+        ).execute()
 
 
 @router.post("/turn")
@@ -52,14 +60,18 @@ async def rag_turn(payload: RagTurnRequest, user=Depends(auth_guard)):
     if mode != "learn":
         raise HTTPException(
             status_code=400,
-            detail="Practice/Review are handled by /mode-sessions. Use mode='learn' here."
+            detail="Practice/Review are handled by /mode-sessions. Use mode='learn' here.",
         )
 
     # Ensure session exists and belongs to user
-    ensure_session(payload.session_id, user["id"], current_mode="learn")
-    _set_session_mode(payload.session_id, user["id"], "learn")
+    try:
+        await ensure_session(payload.session_id, user["id"], current_mode="learn")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-    memory = load_memory(payload.session_id)
+    await _set_session_mode(payload.session_id, user["id"], "learn")
+
+    memory = await load_memory(payload.session_id)
 
     # RAG query (Graceful overload handling)
     try:
@@ -72,13 +84,13 @@ async def rag_turn(payload: RagTurnRequest, user=Depends(auth_guard)):
         # No 500 crashes. Frontend gets a clean 503 to show "Try again".
         raise HTTPException(
             status_code=503,
-            detail="The AI tutor is temporarily busy. Please try again in a moment."
+            detail="The AI tutor is temporarily busy. Please try again in a moment.",
         )
 
     tutor_text = result["response"]
 
     # Session-level video toggle
-    response_format = response_format_for_mode(payload.session_id, "learn")
+    response_format = await response_format_for_mode(payload.session_id, "learn")
 
     # Text -> (optional) video pipeline
     # Important: maybe_generate_video should NEVER throw the whole request.
@@ -95,7 +107,7 @@ async def rag_turn(payload: RagTurnRequest, user=Depends(auth_guard)):
         delivery = {"response_format": "text", "video_url": None, "audio_url": None}
 
     # Log
-    log_conversation(
+    await log_conversation(
         session_id=payload.session_id,
         user_id=user["id"],
         mode="learn",
@@ -123,7 +135,7 @@ async def rag_turn_voice(
         raise HTTPException(status_code=400, detail="Empty audio upload")
 
     # Transcribe (you should fix Windows tempfile issue in stt_service separately)
-    transcript = transcribe_audio(audio_bytes, file.filename)
+    transcript = await asyncio.to_thread(transcribe_audio, audio_bytes, file.filename)
 
     payload = RagTurnRequest(session_id=session_id, mode="learn", message=transcript)
     out = await rag_turn(payload, user)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
 from app.core.auth import auth_guard
@@ -36,6 +37,11 @@ def _ensure_chat_session_ownership(session_id: str, user_id: str, default_mode: 
     Ensures the chat session exists and belongs to the user.
     If it doesn't exist, create it (Swagger-friendly).
     """
+    try:
+        UUID(str(session_id))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid session_id format. Expected UUID.")
+
     supabase = get_supabase()
     s = (
         supabase.table("sessions")
@@ -118,7 +124,7 @@ async def _deliver_and_log(
 
     # If your conversations table has audio_url, log_conversation should accept it.
     # If your current log_conversation signature doesn't accept audio_url, remove it.
-    log_conversation(
+    await log_conversation(
         session_id=session_id,
         user_id=user_id,
         mode=mode,
@@ -152,7 +158,7 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
     # Policy:
     # - review always text
     # - practice follows session prefers_video
-    response_format = response_format_for_mode(payload.session_id, mode)
+    response_format = await response_format_for_mode(payload.session_id, mode)
 
     ms = (
         supabase.table("mode_sessions")
@@ -194,7 +200,7 @@ async def start_mode_session(payload: ModeSessionStartRequest, user=Depends(auth
         }).execute()
 
         # Log prompt (text-only)
-        log_conversation(
+        await log_conversation(
             session_id=payload.session_id,
             user_id=user["id"],
             mode="review",
@@ -264,7 +270,7 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
     mode = ms["mode"]
     stype = ms["session_type"]
 
-    response_format = response_format_for_mode(session_id, mode)
+    response_format = await response_format_for_mode(session_id, mode)
 
     st = (
         supabase.table("session_state")
@@ -392,7 +398,7 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
     )
 
     # review is text-only
-    log_conversation(
+    await log_conversation(
         session_id=session_id,
         user_id=user["id"],
         mode="review",
@@ -441,7 +447,7 @@ async def mode_session_turn(mode_session_id: str, payload: ModeSessionTurnReques
         "current_item": current_item + 1
     }).eq("id", mode_session_id).execute()
 
-    log_conversation(
+    await log_conversation(
         session_id=session_id,
         user_id=user["id"],
         mode="review",

@@ -26,7 +26,7 @@ def get_mode_config(mode: str) -> Dict[str, Any]:
     if mode == "learn":
         return {"temperature": 0.4, "max_tokens": 1000}
     if mode == "practice":
-        return {"temperature": 0.5, "max_tokens": 700}
+        return {"temperature": 0.5, "max_tokens": 1200}
     if mode == "review":
         return {"temperature": 0.1, "max_tokens": 400}
     raise ValueError("Invalid mode")

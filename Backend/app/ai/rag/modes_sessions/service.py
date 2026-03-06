@@ -119,7 +119,7 @@ def adjust_difficulty(current: str, score: float) -> str:
 
     if score >= 0.85 and idx < 2:
         idx += 1
-    elif score <= 0.60 and idx > 0:
+    elif score < 0.45 and idx > 0:
         idx -= 1
 
     return levels[idx]
@@ -178,7 +178,7 @@ async def generate_review_item(session_type: str, difficulty: str) -> Tuple[Dict
     difficulty = (difficulty or "").strip().title() or "Basic"
 
     seed = f"Froth flotation review assessment question type={session_type}, difficulty={difficulty}"
-    contexts = retrieve_context(query=seed, mode="review", top_k=6)
+    contexts = await retrieve_context(query=seed, mode="review", top_k=6)
 
     if session_type == "mcq":
         prompt = f"""
@@ -203,12 +203,12 @@ Rules:
 REFERENCE MATERIAL:
 {chr(10).join(contexts)}
 """
-        raw = generate_response(prompt=prompt, mode="review", task="generate")
+        raw = await generate_response(prompt=prompt, mode="review")
         item = await safe_parse_json_with_retry(
             raw,
             regenerate_json_fn=lambda: generate_response(
                 prompt=prompt + "\n\nIMPORTANT: Output ONLY complete raw JSON. Do NOT wrap in markdown. Ensure it is COMPLETE.",
-                mode="review", task="generate"
+                mode="review"
             ),
             label="review_mcq"
         )
@@ -236,12 +236,12 @@ Rules:
 REFERENCE MATERIAL:
 {chr(10).join(contexts)}
 """
-        raw = generate_response(prompt=prompt, mode="review", task="generate")
+        raw = await generate_response(prompt=prompt, mode="review")
         item = await safe_parse_json_with_retry(
             raw,
             regenerate_json_fn=lambda: generate_response(
                 prompt=prompt + "\n\nIMPORTANT: Output ONLY complete raw JSON, no markdown, no extra text.",
-                mode="review", task="generate"
+                mode="review"
             ),
             label="review_fill_blank"
         )
@@ -268,7 +268,7 @@ Rules:
 REFERENCE MATERIAL:
 {chr(10).join(contexts)}
 """
-        raw = generate_response(prompt=prompt, mode="review", task="generate")
+        raw = await generate_response(prompt=prompt, mode="review")
         item = await safe_parse_json_with_retry(
             raw,
             regenerate_json_fn=lambda: generate_response(
@@ -302,12 +302,12 @@ Rules:
 REFERENCE MATERIAL:
 {chr(10).join(contexts)}
 """
-    raw = generate_response(prompt=prompt, mode="review", task="generate")
+    raw = await generate_response(prompt=prompt, mode="review")
     item = await safe_parse_json_with_retry(
         raw,
         regenerate_json_fn=lambda: generate_response(
             prompt=prompt + "\n\nIMPORTANT: Output ONLY complete raw JSON, no markdown.",
-            mode="review", task="generate"
+            mode="review"
         ),
         label="review_short_answer"
     )
@@ -370,7 +370,7 @@ Return ONLY raw JSON:
   "correct_answer": "optional - include if MCQ or fill_blank"
 }}
 """
-    raw = generate_response(prompt=prompt, mode="review", task="evaluate")
+    raw = await generate_response(prompt=prompt, mode="review")
     return await safe_parse_json_with_retry(raw, label="review_evaluation")
 
 
@@ -426,7 +426,7 @@ async def generate_practice_scenario(session_type: str, difficulty: str) -> Tupl
     difficulty = (difficulty or "").strip().title() or "Basic"
 
     seed = f"Froth flotation practice scenario type={session_type}, difficulty={difficulty}"
-    contexts = retrieve_context(query=seed, mode="practice", top_k=6)
+    contexts = await retrieve_context(query=seed, mode="practice", top_k=6)
 
     prompt = f"""
 You are generating a structured PRACTICE scenario for froth flotation.
@@ -455,18 +455,22 @@ Rules:
 - guided_questions MUST be EXACTLY 3.
 - expected_elements MUST be length 3, each inner list 3–5 SHORT bullets.
 - Each expected bullet MUST be <= 16 words. NO long sentences. NO paragraphs.
+- available_data MUST be 4-6 items only, each <= 12 words.
+- key_learning_points MUST be EXACTLY 2 items, each <= 12 words.
+- title MUST be <= 10 words.
 - Avoid inventing numeric values unless present in REFERENCE MATERIAL.
+- Entire JSON response MUST be <= 320 words.
 - Keep output concise to avoid truncation.
 
 REFERENCE MATERIAL:
 {chr(10).join(contexts)}
 """
-    raw = generate_response(prompt=prompt, mode="practice", task="generate")
+    raw = await generate_response(prompt=prompt, mode="practice")
     scenario = await safe_parse_json_with_retry(
         raw,
         regenerate_json_fn=lambda: generate_response(
-            prompt=prompt + "\n\nIMPORTANT: Output ONLY COMPLETE raw JSON (no markdown). Keep it concise. Ensure all strings are closed.",
-            mode="practice", task="generate"
+            prompt=prompt + "\n\nIMPORTANT: Output ONLY COMPLETE raw JSON (no markdown). Keep it SHORT and compact. STRICT LIMITS: <=320 words total, available_data 4-6 items, key_learning_points exactly 2, each bullet <=12 words, each expected_elements bullet <=16 words. Ensure all strings are closed and JSON is complete.",
+            mode="practice"
         ),
         label="practice_scenario"
     )
@@ -526,7 +530,7 @@ Return ONLY raw JSON:
   "unsupported_claims": ["..."]
 }}
 """
-    raw = generate_response(prompt=prompt, mode="review", task="evaluate")
+    raw = await generate_response(prompt=prompt, mode="review")
     return await safe_parse_json_with_retry(raw, label="practice_evaluation")
 
 

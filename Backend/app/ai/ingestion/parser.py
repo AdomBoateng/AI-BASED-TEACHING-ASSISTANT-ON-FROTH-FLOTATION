@@ -1,4 +1,3 @@
-from pypdf import PdfReader
 from docx import Document
 from unstructured.partition.auto import partition
 import tempfile

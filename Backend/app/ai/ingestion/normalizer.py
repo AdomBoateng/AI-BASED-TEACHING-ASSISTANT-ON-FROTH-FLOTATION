@@ -1,5 +1,5 @@
-import pandas as pd
 from typing import List, Dict
+
 
 def normalize_sections(sections: List[Dict]) -> List[Dict]:
     """
@@ -15,24 +15,23 @@ def normalize_sections(sections: List[Dict]) -> List[Dict]:
         # Detect tables
         if looks_like_table(content):
             explanation = table_to_explanation(content, section.get("title"))
-            normalized.append({
-                "title": section.get("title"),
-                "content": explanation
-            })
+            normalized.append({"title": section.get("title"), "content": explanation})
         else:
             normalized.append(section)
 
     return normalized
+
 
 def looks_like_table(text: str) -> bool:
     """
     Heuristic: detects table-like structures.
     """
     lines = text.splitlines()
-    pipe_lines = [l for l in lines if "|" in l]
+    pipe_lines = [line for line in lines if "|" in line]
 
     # At least 2 rows with column separators
     return len(pipe_lines) >= 2
+
 
 def table_to_explanation(table_text: str, title: str = None) -> str:
     """
@@ -43,7 +42,12 @@ def table_to_explanation(table_text: str, title: str = None) -> str:
     rows = []
     for line in table_text.splitlines():
         if "|" in line:
-            rows.append([cell.strip() for cell in line.split("|") if cell.strip()])
+            # Skip common markdown table separator lines like |---|---|
+            if all(c in " |-:" for c in line.strip()):
+                continue
+            cells = [cell.strip() for cell in line.split("|") if cell.strip()]
+            if cells:
+                rows.append(cells)
 
     if len(rows) < 2:
         return table_text  # fallback
@@ -63,6 +67,7 @@ def table_to_explanation(table_text: str, title: str = None) -> str:
 
     return " ".join(explanations)
 
+
 def row_to_sentence(headers, row):
     """
     Converts one table row into a sentence.
@@ -79,6 +84,10 @@ def row_to_sentence(headers, row):
         descriptors.append(f"{header.lower()} is {value}")
 
     if descriptors:
-        return f"{subject} has the following characteristics: " + ", ".join(descriptors) + "."
+        return (
+            f"{subject} has the following characteristics: "
+            + ", ".join(descriptors)
+            + "."
+        )
 
     return None

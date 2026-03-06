@@ -8,6 +8,7 @@ python-dotenv
 
 python-jose[cryptography]
 fastapi-security
+pydantic[email]
 
 pypdf
 python-docx
@@ -18,6 +19,7 @@ pandas
 tabulate
 
 openai
+anthropic
 pinecone 
 elevenlabs 
 boto3 
