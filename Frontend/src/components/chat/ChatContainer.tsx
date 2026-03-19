@@ -1,13 +1,11 @@
-// FILE PATH: src/components/chat/ChatContainer.tsx
-// COMPLETE: Welcome screen + messages + quick starts
-
 'use client';
 
+import { useState } from 'react';
 import { useChatStore } from '@/store/chatStore';
 import { MessageList } from './MessageList';
 import { InputArea } from './InputArea';
 import { useChat } from '@/hooks/use-chat';
-import { BookOpen, FlaskConical, ClipboardCheck, Zap } from 'lucide-react';
+import { BookOpen, FlaskConical, ClipboardCheck, Zap, Loader2 } from 'lucide-react';
 
 const QUICK_STARTS = [
   'What is froth flotation and how does it work?',
@@ -18,9 +16,19 @@ const QUICK_STARTS = [
 
 export function ChatContainer() {
   const currentSessionId = useChatStore((s) => s.currentSessionId);
+  const isCreatingSession = useChatStore((s) => s.isCreatingSession);
   const { sendMessage } = useChat();
+  
+  const [clickedQuickStart, setClickedQuickStart] = useState<string | null>(null);
 
-  const showWelcome = !currentSessionId;
+  const showWelcome = !currentSessionId && !isCreatingSession;
+
+  // ✅ PROPER: Async quick start handler
+  const handleQuickStart = async (question: string) => {
+    setClickedQuickStart(question);
+    await sendMessage(question, 'learn');
+    setClickedQuickStart(null);
+  };
 
   if (showWelcome) {
     return (
@@ -63,15 +71,32 @@ export function ChatContainer() {
               {QUICK_STARTS.map((q) => (
                 <button
                   key={q}
-                  onClick={() => sendMessage(q, 'learn')}
-                  className="flex items-center gap-3 w-full text-left rounded-lg border border-border/40 bg-card/50 px-4 py-3 text-xs text-muted-foreground hover:border-primary/30 hover:bg-primary/5 hover:text-foreground transition-all group"
+                  onClick={() => handleQuickStart(q)}
+                  disabled={clickedQuickStart === q}
+                  className="flex items-center gap-3 w-full text-left rounded-lg border border-border/40 bg-card/50 px-4 py-3 text-xs text-muted-foreground hover:border-primary/30 hover:bg-primary/5 hover:text-foreground transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Zap className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/40 group-hover:text-primary transition-colors" />
+                  {clickedQuickStart === q ? (
+                    <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-primary" />
+                  ) : (
+                    <Zap className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/40 group-hover:text-primary transition-colors" />
+                  )}
                   {q}
                 </button>
               ))}
             </div>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ Show loading state while creating session
+  if (isCreatingSession) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Starting session...</p>
         </div>
       </div>
     );

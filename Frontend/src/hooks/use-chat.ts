@@ -17,6 +17,7 @@ export function useChat() {
     isLoadingMessage,
     isGeneratingVideo,
     currentVideoResponse,
+    isCreatingSession,
     error,
     createSession,
     setCurrentSession,
@@ -26,18 +27,54 @@ export function useChat() {
     setIsGeneratingVideo,
     setVideoResponse,
     setError,
+    setIsCreatingSession,
     updateSession,
   } = useChatStore();
 
   const isAuthenticated = useUserStore((s) => s.isAuthenticated);
-  const userPrefersVideo = useUserStore((s) => s.preferences.prefersVideo);
 
+  /**
+   * ✅ PROPER SOLUTION: Create session on backend FIRST, then store locally
+   */
   const startNewSession = useCallback(
-    (firstMessage?: string, mode: TutorMode = 'learn') => {
-      const session = createSession(firstMessage, mode);
-      return session;
+    async (firstMessage?: string, mode: TutorMode = 'learn') => {
+      if (!isAuthenticated) {
+        toast.error('Please log in to continue.');
+        return null;
+      }
+
+      setIsCreatingSession(true);
+      setError(null);
+
+      try {
+        console.log('[startNewSession] Creating backend session...');
+        
+        // ✅ Create session on backend FIRST
+        const res = await apiClient.createSession();
+        
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message ?? 'Failed to create session');
+        }
+
+        console.log('[startNewSession] Backend session created:', res.data);
+
+        // ✅ Store session locally with backend ID
+        const session = createSession(firstMessage, mode, res.data.session_id);
+        
+        console.log('[startNewSession] Session ready:', session.id);
+        
+        return session;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to create session';
+        console.error('[startNewSession] Error:', err);
+        setError(message);
+        toast.error(message);
+        return null;
+      } finally {
+        setIsCreatingSession(false);
+      }
     },
-    [createSession]
+    [isAuthenticated, createSession, setIsCreatingSession, setError]
   );
 
   const sendMessage = useCallback(
@@ -48,55 +85,16 @@ export function useChat() {
         return;
       }
 
+      // ✅ SIMPLIFIED: Session must already exist (created by startNewSession)
       let sessionId = currentSessionId;
       if (!sessionId) {
-        const session = createSession(text, mode);
+        console.log('[sendMessage] No session, creating one...');
+        const session = await startNewSession(text, mode);
+        if (!session) return;  // Failed to create session
         sessionId = session.id;
-
-        try {
-          updateSession(sessionId, { prefersVideo: !!userPrefersVideo });
-        } catch (e) {
-          console.warn('[sendMessage] Failed to set initial session video pref:', e);
-        }
       }
 
-      const currentSession = sessions.find(s => s.id === sessionId);
-      console.log('[sendMessage] Current session state:', {
-        sessionId,
-        prefersVideo: currentSession?.prefersVideo,
-        mode: currentSession?.mode,
-      });
-
-      // ✅ FIX: Ensure backend session exists and is synced BEFORE sending message
-      try {
-        const getRes = await apiClient.getSession(sessionId);
-        
-        if (!getRes.success) {
-          console.log('[sendMessage] Session not on backend, creating...');
-          const createRes = await apiClient.createSession();
-          
-          if (createRes.success && createRes.data) {
-            console.log('[sendMessage] Backend session created');
-
-            const pref = !!currentSession?.prefersVideo;
-            console.log('[sendMessage] Setting backend video preference to', pref);
-            
-            // ✅ CRITICAL: Wait for this to complete before continuing
-            await apiClient.setVideoPreference(createRes.data.session_id, pref);
-            console.log('[sendMessage] Video preference synced to backend');
-          }
-        } else {
-          console.log('[sendMessage] Backend session exists:', getRes.data);
-          
-          if (getRes.data && getRes.data.prefers_video !== (!!currentSession?.prefersVideo)) {
-            console.log('[sendMessage] Video preference mismatch, syncing...');
-            await apiClient.setVideoPreference(sessionId, !!currentSession?.prefersVideo);
-            console.log('[sendMessage] Video preference synced');
-          }
-        }
-      } catch (err) {
-        console.warn('[sendMessage] Session sync failed, continuing anyway:', err);
-      }
+      console.log('[sendMessage] Using session:', sessionId);
 
       const userMsg: Message = {
         id: uuidv4(),
@@ -130,18 +128,11 @@ export function useChat() {
 
         const { response, response_format, video_url, audio_url, subtitle_url } = res.data;
 
-        console.log('[sendMessage] Response details:', {
-          response_format,
-          has_video_url: !!video_url,
-          has_audio_url: !!audio_url,
-          has_subtitle_url: !!subtitle_url,
-        });
+        console.log('[sendMessage] Response format:', response_format);
 
         if (response_format === 'video') {
           console.log('[sendMessage] ✅ Video response received!');
           setIsGeneratingVideo(true);
-        } else {
-          console.log('[sendMessage] ⚠️ Text response (expected video?)');
         }
 
         const aiMsg: Message = {
@@ -160,12 +151,6 @@ export function useChat() {
         if (response_format === 'video' && video_url) {
           const subtitles = subtitle_url ? parseVTT(subtitle_url) : [];
           const duration = getVideoDurationFromSubtitles(subtitles);
-
-          console.log('[sendMessage] Setting video response:', {
-            videoUrl: video_url,
-            subtitlesCount: subtitles.length,
-            duration,
-          });
 
           setVideoResponse({
             videoUrl: video_url,
@@ -190,10 +175,8 @@ export function useChat() {
     },
     [
       currentSessionId,
-      sessions,
       isAuthenticated,
-      userPrefersVideo,
-      createSession,
+      startNewSession,
       addMessage,
       setIsLoadingMessage,
       setIsGeneratingVideo,
@@ -221,47 +204,12 @@ export function useChat() {
           updateSession(currentSessionId, { prefersVideo });
           toast.success(prefersVideo ? '🎥 Video mode enabled' : '📝 Text mode enabled');
         } else {
-          const errorCode = res.error?.code;
-          const errorMsg = res.error?.message || '';
-
-          if (errorCode === '404' || errorMsg.includes('not found')) {
-            console.log('[toggleVideoPreference] Session not found, creating...');
-            
-            const createRes = await apiClient.createSession();
-            if (createRes.success && createRes.data) {
-              console.log('[toggleVideoPreference] Backend session created:', createRes.data);
-              
-              // ✅ FIX: Wait for video preference to be set before continuing
-              const retryRes = await apiClient.setVideoPreference(
-                createRes.data.session_id,
-                prefersVideo
-              );
-              
-              console.log('[toggleVideoPreference] Video preference set:', retryRes);
-              
-              if (retryRes.success) {
-                updateSession(currentSessionId, { prefersVideo });
-                toast.success(prefersVideo ? '🎥 Video mode enabled' : '📝 Text mode enabled');
-              } else {
-                throw new Error(retryRes.error?.message ?? 'Failed after retry');
-              }
-            } else {
-              throw new Error('Failed to create session on backend');
-            }
-          } else if (errorCode === '400' && errorMsg.includes('avatar')) {
-            toast.error('⚠️ Please select an avatar to enable video mode');
-          } else if (errorCode === '400' && errorMsg.includes('review')) {
-            toast.error('Video mode is not available in review mode');
-          } else {
-            throw new Error(errorMsg || 'Failed to toggle video mode');
-          }
+          throw new Error(res.error?.message ?? 'Failed to toggle video mode');
         }
       } catch (err) {
         console.error('[toggleVideoPreference] Error:', err);
         const message = err instanceof Error ? err.message : 'Failed to toggle video mode';
         toast.error(message);
-        
-        updateSession(currentSessionId, { prefersVideo: !prefersVideo });
       }
     },
     [currentSessionId, updateSession]
@@ -276,6 +224,7 @@ export function useChat() {
     messages,
     isLoadingMessage,
     isGeneratingVideo,
+    isCreatingSession,  // ✅ NEW: Expose session creation state
     currentVideoResponse,
     error,
     startNewSession,

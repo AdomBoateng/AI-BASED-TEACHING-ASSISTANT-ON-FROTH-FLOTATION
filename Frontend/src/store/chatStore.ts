@@ -11,8 +11,9 @@ export interface ChatState {
   isGeneratingVideo: boolean;
   currentVideoResponse: VideoResponse | null;
   error: string | null;
+  isCreatingSession: boolean;  // ✅ NEW: Track session creation state
 
-  createSession: (firstMessage?: string, mode?: TutorMode) => Session;
+  createSession: (firstMessage?: string, mode?: TutorMode, backendSessionId?: string) => Session;
   setCurrentSession: (id: string | null) => void;
   updateSession: (id: string, updates: Partial<Session>) => void;
   deleteSession: (id: string) => void;
@@ -23,6 +24,7 @@ export interface ChatState {
   setIsGeneratingVideo: (v: boolean) => void;
   setVideoResponse: (v: VideoResponse | null) => void;
   setError: (v: string | null) => void;
+  setIsCreatingSession: (v: boolean) => void;  // ✅ NEW
 
   // Legacy aliases
   conversations: Session[];
@@ -43,15 +45,17 @@ export const useChatStore = create<ChatState>()(
       isGeneratingVideo: false,
       currentVideoResponse: null,
       error: null,
+      isCreatingSession: false,  // ✅ NEW
 
-      createSession: (firstMessage, mode = 'learn') => {
+      createSession: (firstMessage, mode = 'learn', backendSessionId) => {
+        // ✅ CHANGED: Accept optional backend session ID
         const session: Session = {
-          id: uuidv4(),
+          id: backendSessionId || uuidv4(),  // Use backend ID if provided
           title: firstMessage
             ? firstMessage.slice(0, 40) + (firstMessage.length > 40 ? '…' : '')
             : 'New session',
           mode,
-          prefersVideo: true,  // ✅ CHANGED: Default to video enabled
+          prefersVideo: true,
           createdAt: new Date(),
           updatedAt: new Date(),
           messageCount: 0,
@@ -111,6 +115,7 @@ export const useChatStore = create<ChatState>()(
       setIsGeneratingVideo: (v) => set({ isGeneratingVideo: v }),
       setVideoResponse: (v) => set({ currentVideoResponse: v }),
       setError: (v) => set({ error: v }),
+      setIsCreatingSession: (v) => set({ isCreatingSession: v }),  // ✅ NEW
 
       // Legacy aliases
       get conversations() { return get().sessions; },

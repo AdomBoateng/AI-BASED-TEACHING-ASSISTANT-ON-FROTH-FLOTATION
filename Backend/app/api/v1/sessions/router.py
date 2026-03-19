@@ -14,14 +14,14 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@router.post("/")  # ✅ FIX: must be "/" not ""
+@router.post("/")
 def create_session(user=Depends(auth_guard)):
     """Create a new chat session (frontend-friendly). Default mode is learn."""
     supabase = get_supabase()
     ins = supabase.table("sessions").insert({
         "user_id": user["id"],
         "current_mode": "learn",
-        "prefers_video": False,
+        "prefers_video": True,  # ✅ CHANGED: Default to True (matches frontend default)
         "started_at": _now_iso(),
     }).execute()
 
