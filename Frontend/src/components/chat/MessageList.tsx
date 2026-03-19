@@ -1,6 +1,3 @@
-// FILE PATH: src/components/chat/MessageList.tsx
-// FINAL VERSION: Clean scroll implementation
-
 'use client';
 
 import { useEffect, useRef } from 'react';
@@ -21,8 +18,9 @@ export function MessageList() {
 
   if (messages.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20">
+      // min-h-0 prevents this from busting out of the flex column
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-4 p-6 text-center">
+        <div className="flex h-14 w-14 items-center justify-center p-5 rounded-2xl bg-primary/10 ring-1 ring-primary/20">
           <BookOpen className="h-7 w-7 text-primary" />
         </div>
         <div>
@@ -36,8 +34,7 @@ export function MessageList() {
   }
 
   return (
-    // Scroll container: takes remaining space, scrolls internally
-    <div className="flex-1 min-h-0 overflow-y-auto">
+    <div className="flex-1 min-h-0 overflow-y-auto p-6">
       <div className="mx-auto max-w-3xl flex flex-col gap-6 px-4 py-6">
         {messages.map((message) => (
           <div key={message.id} className="animate-in fade-in slide-in-from-bottom-2 duration-300">

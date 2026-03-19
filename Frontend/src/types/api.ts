@@ -42,8 +42,9 @@ export interface RagTurnResponse {
   response: string;
   response_format: 'text' | 'video';
   video_url?: string | null;
-  audio_url?: string | null;  // NEW: audio URL when video is generated
-  did_payload?: any;          // Optional D-ID raw response
+  subtitle_url?: string | null;
+  audio_url?: string | null;
+  did_payload?: any;
 }
 
 export interface VoiceTurnResponse extends RagTurnResponse {

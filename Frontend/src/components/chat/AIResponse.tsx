@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useChatStore } from '@/store/chatStore';
 import { VideoPlayer } from './VideoPlayer';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -13,6 +14,7 @@ interface AIResponseProps {
 
 export function AIResponse({ message }: AIResponseProps) {
   const currentVideoResponse = useChatStore((s) => s.currentVideoResponse);
+  const [showTranscript, setShowTranscript] = useState(false);
 
   // Only show the video player for the latest assistant message that has a video
   const showVideo =
@@ -36,16 +38,23 @@ export function AIResponse({ message }: AIResponseProps) {
           <div className="rounded-xl border border-border/50 overflow-hidden shadow-md">
             <VideoPlayer
               videoUrl={message.videoUrl!}
+              audioUrl={message.audioUrl ?? undefined}
               subtitles={currentVideoResponse?.subtitles ?? []}
               duration={currentVideoResponse?.duration ?? 0}
             />
-            {/* Transcript below video */}
+            {/* Transcript toggle (hidden by default) */}
             {message.content && (
               <div className="bg-card/50 border-t border-border/30 px-4 py-3">
-                <p className="text-xs text-muted-foreground font-medium mb-1 uppercase tracking-wider">
-                  Transcript
-                </p>
-                <MarkdownRenderer content={message.content} />
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Transcript</p>
+                  <button
+                    className="text-xs text-primary underline"
+                    onClick={() => setShowTranscript((s) => !s)}
+                  >
+                    {showTranscript ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                {showTranscript && <MarkdownRenderer content={message.content} />}
               </div>
             )}
           </div>

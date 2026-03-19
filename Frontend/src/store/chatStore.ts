@@ -4,37 +4,27 @@ const uuidv4 = () => crypto.randomUUID();
 import type { Message, Session, VideoResponse, TutorMode } from '@/types';
 
 export interface ChatState {
-  // Sessions (maps to backend "sessions" table)
   sessions: Session[];
   currentSessionId: string | null;
-
-  // Messages for current session
   messages: Message[];
-
-  // Loading / video state
   isLoadingMessage: boolean;
   isGeneratingVideo: boolean;
   currentVideoResponse: VideoResponse | null;
   error: string | null;
 
-  // Actions — sessions
   createSession: (firstMessage?: string, mode?: TutorMode) => Session;
   setCurrentSession: (id: string | null) => void;
   updateSession: (id: string, updates: Partial<Session>) => void;
   deleteSession: (id: string) => void;
-
-  // Actions — messages
   addMessage: (message: Message) => void;
   setMessages: (messages: Message[]) => void;
   clearMessages: () => void;
-
-  // Actions — UI state
   setIsLoadingMessage: (v: boolean) => void;
   setIsGeneratingVideo: (v: boolean) => void;
   setVideoResponse: (v: VideoResponse | null) => void;
   setError: (v: string | null) => void;
 
-  // Legacy aliases (keeps existing components working)
+  // Legacy aliases
   conversations: Session[];
   currentConversationId: string | null;
   setCurrentConversation: (id: string | null) => void;
@@ -54,7 +44,6 @@ export const useChatStore = create<ChatState>()(
       currentVideoResponse: null,
       error: null,
 
-      // ── Sessions ───────────────────────────────────────────────────────────
       createSession: (firstMessage, mode = 'learn') => {
         const session: Session = {
           id: uuidv4(),
@@ -62,7 +51,7 @@ export const useChatStore = create<ChatState>()(
             ? firstMessage.slice(0, 40) + (firstMessage.length > 40 ? '…' : '')
             : 'New session',
           mode,
-          prefersVideo: false,
+          prefersVideo: true,  // ✅ CHANGED: Default to video enabled
           createdAt: new Date(),
           updatedAt: new Date(),
           messageCount: 0,
@@ -95,11 +84,9 @@ export const useChatStore = create<ChatState>()(
             : {}),
         })),
 
-      // ── Messages ──────────────────────────────────────────────────────────
       addMessage: (message) =>
         set((state) => {
           const newMessages = [...state.messages, message];
-          // Keep session message count + preview in sync
           const sid = state.currentSessionId;
           return {
             messages: newMessages,
@@ -120,13 +107,12 @@ export const useChatStore = create<ChatState>()(
       setMessages: (messages) => set({ messages }),
       clearMessages: () => set({ messages: [], currentVideoResponse: null }),
 
-      // ── UI ────────────────────────────────────────────────────────────────
       setIsLoadingMessage: (v) => set({ isLoadingMessage: v }),
       setIsGeneratingVideo: (v) => set({ isGeneratingVideo: v }),
       setVideoResponse: (v) => set({ currentVideoResponse: v }),
       setError: (v) => set({ error: v }),
 
-      // ── Legacy aliases ────────────────────────────────────────────────────
+      // Legacy aliases
       get conversations() { return get().sessions; },
       get currentConversationId() { return get().currentSessionId; },
       setCurrentConversation: (id) => get().setCurrentSession(id),

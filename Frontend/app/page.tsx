@@ -1,6 +1,7 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
+import { ThemeToggle } from '@/components/common/ThemeToggle'
 import { useRouter } from 'next/navigation'
 import { Sparkles, Video, Zap, Brain } from 'lucide-react'
 
@@ -18,9 +19,12 @@ export default function Home() {
             </div>
             <span className="text-xl font-bold text-foreground">Meraki</span>
           </div>
-          <Button onClick={() => router.push('/dashboard')} className="gap-2">
-            Get Started
-          </Button>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Button onClick={() => router.push('/dashboard')} className="gap-2">
+              Get Started
+            </Button>
+          </div>
         </div>
       </nav>
 
@@ -78,67 +82,49 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* Feature 1 */}
             <div className="p-6 rounded-lg border border-border bg-background hover:border-primary/50 transition-colors">
               <Video className="h-10 w-10 text-primary mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">
-                Video Responses
-              </h3>
+              <h3 className="text-lg font-semibold text-foreground mb-2">Video Responses</h3>
               <p className="text-sm text-muted-foreground">
                 Get educational answers delivered as engaging videos with your own AI avatar
               </p>
             </div>
 
-            {/* Feature 2 */}
             <div className="p-6 rounded-lg border border-border bg-background hover:border-primary/50 transition-colors">
               <Sparkles className="h-10 w-10 text-primary mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">
-                Smart Subtitles
-              </h3>
+              <h3 className="text-lg font-semibold text-foreground mb-2">Smart Subtitles</h3>
               <p className="text-sm text-muted-foreground">
                 Perfect synchronized subtitles in multiple languages for accessibility
               </p>
             </div>
 
-            {/* Feature 3 */}
             <div className="p-6 rounded-lg border border-border bg-background hover:border-primary/50 transition-colors">
               <Brain className="h-10 w-10 text-primary mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">
-                Advanced AI
-              </h3>
+              <h3 className="text-lg font-semibold text-foreground mb-2">Advanced AI</h3>
               <p className="text-sm text-muted-foreground">
                 Powered by Claude API for intelligent, pedagogically appropriate responses
               </p>
             </div>
 
-            {/* Feature 4 */}
             <div className="p-6 rounded-lg border border-border bg-background hover:border-primary/50 transition-colors">
               <Zap className="h-10 w-10 text-primary mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">
-                Voice Input
-              </h3>
+              <h3 className="text-lg font-semibold text-foreground mb-2">Voice Input</h3>
               <p className="text-sm text-muted-foreground">
                 Simply speak your questions - powered by OpenAI Whisper
               </p>
             </div>
 
-            {/* Feature 5 */}
             <div className="p-6 rounded-lg border border-border bg-background hover:border-primary/50 transition-colors">
               <Video className="h-10 w-10 text-primary mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">
-                Conversation History
-              </h3>
+              <h3 className="text-lg font-semibold text-foreground mb-2">Conversation History</h3>
               <p className="text-sm text-muted-foreground">
                 Keep track of all your learning conversations in one place
               </p>
             </div>
 
-            {/* Feature 6 */}
             <div className="p-6 rounded-lg border border-border bg-background hover:border-primary/50 transition-colors">
               <Brain className="h-10 w-10 text-primary mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">
-                Personalized Learning
-              </h3>
+              <h3 className="text-lg font-semibold text-foreground mb-2">Personalized Learning</h3>
               <p className="text-sm text-muted-foreground">
                 Customize preferences and get responses tailored to your learning style
               </p>
@@ -170,9 +156,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-border bg-card/50 py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-sm text-muted-foreground">
-          <p>
-            Built with Next.js and powered by advanced AI. © 2026 Meraki. All rights reserved.
-          </p>
+          <p>Built with Next.js and powered by advanced AI. © 2026 Meraki. All rights reserved.</p>
         </div>
       </footer>
     </main>
