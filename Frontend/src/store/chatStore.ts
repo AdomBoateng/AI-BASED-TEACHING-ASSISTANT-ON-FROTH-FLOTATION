@@ -18,6 +18,8 @@ export interface ChatState {
   activeModeSession: ActiveModeSession | null;
   // True while we're waiting for /mode-sessions/start to return
   isStartingModeSession: boolean;
+  // True while switchMode API call is in flight (learn tab spinner)
+  isSwitchingMode: boolean;
 
   createSession: (firstMessage?: string, mode?: TutorMode, backendSessionId?: string) => Session;
   setCurrentSession: (id: string | null) => void;
@@ -35,6 +37,7 @@ export interface ChatState {
   // Mode session actions
   setActiveModeSession: (v: ActiveModeSession | null) => void;
   setIsStartingModeSession: (v: boolean) => void;
+  setIsSwitchingMode: (v: boolean) => void;
   updateActiveModeSession: (updates: Partial<ActiveModeSession>) => void;
 
   // Legacy aliases
@@ -59,6 +62,7 @@ export const useChatStore = create<ChatState>()(
       isCreatingSession: false,
       activeModeSession: null,
       isStartingModeSession: false,
+      isSwitchingMode: false,
 
       createSession: (firstMessage, mode = 'learn', backendSessionId) => {
         const session: Session = {
@@ -146,6 +150,7 @@ export const useChatStore = create<ChatState>()(
 
       setActiveModeSession: (v) => set({ activeModeSession: v }),
       setIsStartingModeSession: (v) => set({ isStartingModeSession: v }),
+      setIsSwitchingMode: (v) => set({ isSwitchingMode: v }),
       updateActiveModeSession: (updates) =>
         set((state) =>
           state.activeModeSession

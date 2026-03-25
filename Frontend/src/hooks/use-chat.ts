@@ -45,6 +45,7 @@ export function useChat() {
     currentVideoResponse,
     isCreatingSession,
     isStartingModeSession,
+    isSwitchingMode,
     activeModeSession,
     error,
     createSession,
@@ -60,6 +61,7 @@ export function useChat() {
     setIsCreatingSession,
     setActiveModeSession,
     setIsStartingModeSession,
+    setIsSwitchingMode,
     updateActiveModeSession,
     updateSession,
   } = useChatStore();
@@ -477,6 +479,7 @@ export function useChat() {
       const currentSession = sessions.find((s) => s.id === currentSessionId);
       if (currentSession?.currentMode === newMode) return;
 
+      setIsSwitchingMode(true);
       try {
         const res = await apiClient.switchSessionMode(currentSessionId, newMode);
         if (!res.success) throw new Error(res.error?.message);
@@ -494,7 +497,7 @@ export function useChat() {
 
         // Toast notification for the new mode
         const modeToasts: Record<TutorMode, string> = {
-          learn:    '📖 Learn Mode. Aask me anything',
+          learn:    '📖 Learn mode. Ask me anything',
           practice: '🔬 Practice mode. Ready when you start a session',
           review:   '📋 Review mode. Text only',
         };
@@ -502,9 +505,11 @@ export function useChat() {
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to switch mode';
         toast.error(message);
+      } finally {
+        setIsSwitchingMode(false);
       }
     },
-    [currentSessionId, sessions, clearMessages, setActiveModeSession, updateSession]
+    [currentSessionId, sessions, clearMessages, setActiveModeSession, setIsSwitchingMode, updateSession]
   );
 
   // ── Video preference toggle ────────────────────────────────────────────────
@@ -546,6 +551,194 @@ export function useChat() {
     }
   }, [activeModeSession, currentSessionId, setActiveModeSession, updateSession]);
 
+  // ── Switch review question type mid-session ───────────────────────────────
+  // Ends the current review mode session silently and immediately starts a
+  // fresh one with the new type, keeping the same difficulty and chat session.
+  const switchReviewType = useCallback(
+    async (newSessionType: string) => {
+      if (!activeModeSession || activeModeSession.mode !== 'review') return;
+      if (newSessionType === activeModeSession.sessionType) return;
+      if (!currentSessionId) return;
+
+      setIsStartingModeSession(true);
+      setError(null);
+
+      try {
+        // 1. End the current mode session on the backend (silent — no toast)
+        await apiClient.endModeSession(activeModeSession.modeSessionId);
+
+        // 2. Clear screen for clean slate
+        clearMessages();
+
+        // 3. Start fresh with new type, carry over difficulty
+        const res = await apiClient.startModeSession({
+          session_id: currentSessionId,
+          mode: 'review',
+          session_type: newSessionType,
+          difficulty: activeModeSession.difficulty as 'Basic' | 'Intermediate' | 'Advanced',
+        });
+
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message ?? 'Failed to switch question type');
+        }
+
+        const { mode_session_id, prompt, response_format, video_url, audio_url } = res.data;
+
+        const newActiveSess: ActiveModeSession = {
+          modeSessionId: mode_session_id,
+          mode: 'review',
+          sessionType: newSessionType,
+          difficulty: activeModeSession.difficulty,
+          currentStep: 1,
+          totalSteps: activeModeSession.totalSteps,
+          completed: false,
+        };
+        setActiveModeSession(newActiveSess);
+
+        // Add the first question as a prompt message
+        const promptMsg: Message = {
+          id: crypto.randomUUID(),
+          sessionId: currentSessionId,
+          role: 'assistant',
+          content: prompt,
+          responseFormat: response_format,
+          videoUrl: video_url ?? null,
+          audioUrl: audio_url ?? null,
+          mode: 'review',
+          messageType: 'prompt',
+          step: 1,
+          totalSteps: activeModeSession.totalSteps,
+          timestamp: new Date(),
+        };
+        addMessage(promptMsg);
+        setVideoResponse(null);
+
+        // Find the label for the toast
+        const REVIEW_LABELS: Record<string, string> = {
+          mcq: 'Multiple Choice',
+          fill_blank: 'Fill in the Blank',
+          flashcard: 'Flashcard',
+          short_answer: 'Short Answer',
+        };
+        toast.success(`Switched to ${REVIEW_LABELS[newSessionType] ?? newSessionType}`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to switch question type';
+        setError(message);
+        toast.error(message);
+      } finally {
+        setIsStartingModeSession(false);
+      }
+    },
+    [
+      activeModeSession,
+      currentSessionId,
+      clearMessages,
+      setActiveModeSession,
+      setIsStartingModeSession,
+      setError,
+      addMessage,
+      setVideoResponse,
+    ]
+  );
+
+  // ── Switch practice topic mid-session ─────────────────────────────────────
+  // Same logic as switchReviewType — ends current practice session silently
+  // and starts a fresh one with the new topic, keeping the same difficulty.
+  const switchPracticeType = useCallback(
+    async (newSessionType: string) => {
+      if (!activeModeSession || activeModeSession.mode !== 'practice') return;
+      if (newSessionType === activeModeSession.sessionType) return;
+      if (!currentSessionId) return;
+
+      setIsStartingModeSession(true);
+      setError(null);
+
+      try {
+        // 1. End current practice session silently
+        await apiClient.endModeSession(activeModeSession.modeSessionId);
+
+        // 2. Clear screen for clean slate
+        clearMessages();
+
+        // 3. Start fresh with new topic, carry over difficulty
+        const res = await apiClient.startModeSession({
+          session_id: currentSessionId,
+          mode: 'practice',
+          session_type: newSessionType,
+          difficulty: activeModeSession.difficulty as 'Basic' | 'Intermediate' | 'Advanced',
+        });
+
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message ?? 'Failed to switch practice topic');
+        }
+
+        const { mode_session_id, prompt, response_format, video_url, audio_url } = res.data;
+
+        const newActiveSess: ActiveModeSession = {
+          modeSessionId: mode_session_id,
+          mode: 'practice',
+          sessionType: newSessionType,
+          difficulty: activeModeSession.difficulty,
+          currentStep: 1,
+          totalSteps: 3,
+          completed: false,
+        };
+        setActiveModeSession(newActiveSess);
+
+        // Add the opening scenario as a prompt message
+        const promptMsg: Message = {
+          id: crypto.randomUUID(),
+          sessionId: currentSessionId,
+          role: 'assistant',
+          content: prompt,
+          responseFormat: response_format,
+          videoUrl: video_url ?? null,
+          audioUrl: audio_url ?? null,
+          mode: 'practice',
+          messageType: 'prompt',
+          step: 1,
+          totalSteps: 3,
+          timestamp: new Date(),
+        };
+        addMessage(promptMsg);
+
+        if (response_format === 'video' && video_url) {
+          setIsGeneratingVideo(true);
+          setVideoResponse({ videoUrl: video_url, audioUrl: audio_url ?? undefined, subtitles: [], duration: 0 });
+          setIsGeneratingVideo(false);
+        } else {
+          setVideoResponse(null);
+        }
+
+        const PRACTICE_LABELS: Record<string, string> = {
+          flotation_basics:  'Flotation Basics',
+          reagents:          'Reagents & Chemistry',
+          process_variables: 'Process Variables',
+          troubleshooting:   'Troubleshooting',
+          surface_chemistry: 'Surface Chemistry',
+        };
+        toast.success(`Switched to ${PRACTICE_LABELS[newSessionType] ?? newSessionType}`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to switch practice topic';
+        setError(message);
+        toast.error(message);
+      } finally {
+        setIsStartingModeSession(false);
+      }
+    },
+    [
+      activeModeSession,
+      currentSessionId,
+      clearMessages,
+      setActiveModeSession,
+      setIsStartingModeSession,
+      setIsGeneratingVideo,
+      setError,
+      addMessage,
+      setVideoResponse,
+    ]
+  );
+
   const currentSession = sessions.find((s) => s.id === currentSessionId) ?? null;
 
   return {
@@ -557,6 +750,7 @@ export function useChat() {
     isGeneratingVideo,
     isCreatingSession,
     isStartingModeSession,
+    isSwitchingMode,
     activeModeSession,
     currentVideoResponse,
     error,
@@ -566,6 +760,8 @@ export function useChat() {
     startModeSession,
     switchMode,
     endModeSession,
+    switchReviewType,
+    switchPracticeType,
     toggleVideoPreference,
     setCurrentSession,
     deleteSession,

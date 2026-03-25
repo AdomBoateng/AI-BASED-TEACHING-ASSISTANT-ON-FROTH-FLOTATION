@@ -53,13 +53,37 @@ export const AUDIO_CONSTRAINTS = {
   },
 } as const;
 
-// ─── Mode session config ──────────────────────────────────────────────────────
-export const SESSION_TYPES = [
-  { value: 'flotation_basics', label: 'Flotation Basics' },
-  { value: 'reagents', label: 'Reagents & Chemistry' },
-  { value: 'process_variables', label: 'Process Variables' },
-  { value: 'troubleshooting', label: 'Troubleshooting' },
-  { value: 'surface_chemistry', label: 'Surface Chemistry' },
+// ─── Practice session types (topic-based, sent as session_type to backend) ───
+export const PRACTICE_SESSION_TYPES = [
+  { value: 'flotation_basics',   label: 'Flotation Basics' },
+  { value: 'reagents',           label: 'Reagents & Chemistry' },
+  { value: 'process_variables',  label: 'Process Variables' },
+  { value: 'troubleshooting',    label: 'Troubleshooting' },
+  { value: 'surface_chemistry',  label: 'Surface Chemistry' },
+] as const;
+
+// ─── Review session types (question format, maps directly to backend handler) ─
+export const REVIEW_SESSION_TYPES = [
+  {
+    value: 'mcq',
+    label: 'Multiple Choice',
+    desc: 'Pick the correct answer from 4 options',
+  },
+  {
+    value: 'fill_blank',
+    label: 'Fill in the Blank',
+    desc: 'Complete the sentence with the missing term',
+  },
+  {
+    value: 'flashcard',
+    label: 'Flashcard',
+    desc: 'Explain a concept shown on the front',
+  },
+  {
+    value: 'short_answer',
+    label: 'Short Answer',
+    desc: 'Write a concise answer to an exam-style question',
+  },
 ] as const;
 
 export const DIFFICULTY_LEVELS = ['Basic', 'Intermediate', 'Advanced'] as const;

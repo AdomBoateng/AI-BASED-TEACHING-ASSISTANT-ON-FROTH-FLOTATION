@@ -37,7 +37,7 @@ const MODE_CARDS = [
     mode: 'review' as const,
     icon: ClipboardCheck,
     label: 'Review',
-    desc: 'Adaptive quiz questions',
+    desc: 'MCQ, fill-in, flashcard & more',
     color: 'text-amber-400',
     bg: 'hover:bg-amber-500/5 hover:border-amber-500/30',
   },
@@ -51,6 +51,12 @@ export function ChatContainer() {
   const { sendMessage, startModeSession, startNewSession } = useChat();
 
   const [clickedQuickStart, setClickedQuickStart] = useState<string | null>(null);
+
+  // ── Modal state lives HERE at the top level so it survives re-renders ───────
+  // When the user clicks Practice/Review on the welcome screen, we:
+  //   1. Set modeSelectorTarget immediately (opens modal)
+  //   2. Create the backend session in the background
+  //   3. Modal stays open regardless of whether showWelcome flips
   const [modeSelectorTarget, setModeSelectorTarget] = useState<'practice' | 'review' | null>(null);
 
   const showWelcome = !currentSessionId && !isCreatingSession;
@@ -63,17 +69,20 @@ export function ChatContainer() {
 
   const handleModeCardClick = async (mode: 'learn' | 'practice' | 'review') => {
     if (mode === 'learn') {
-      // Learn mode: just start a session, the first message will kick it off
       await startNewSession(undefined, 'learn');
       return;
     }
-    // Practice / Review: show modal to pick session type + difficulty
-    // Ensure we have a session first
-    if (!currentSessionId) {
-      const session = await startNewSession(undefined, mode);
-      if (!session) return;
-    }
+
+    // ✅ FIX: Open the modal FIRST before any async work.
+    // This means the modal is already mounted when currentSessionId gets set,
+    // so it won't be lost when showWelcome flips to false.
     setModeSelectorTarget(mode);
+
+    // Create backend session in the background if we don't have one yet.
+    // startModeSession (called from handleModeStart) will reuse it.
+    if (!currentSessionId) {
+      startNewSession(undefined, mode); // intentionally not awaited
+    }
   };
 
   const handleModeStart = async (
@@ -85,6 +94,20 @@ export function ChatContainer() {
     setModeSelectorTarget(null);
   };
 
+  // ── ModeSelector is rendered at the TOP LEVEL, outside all conditionals ─────
+  // This is the key fix: it doesn't matter whether we're showing the welcome
+  // screen or the chat view — the modal always renders when modeSelectorTarget
+  // is set, and is never unmounted by a re-render of the parent.
+  const modeModal = modeSelectorTarget ? (
+    <ModeSelector
+      mode={modeSelectorTarget}
+      onStart={handleModeStart}
+      onClose={() => setModeSelectorTarget(null)}
+      isLoading={isStartingModeSession}
+    />
+  ) : null;
+
+  // ── Welcome screen ───────────────────────────────────────────────────────────
   if (showWelcome) {
     return (
       <>
@@ -100,7 +123,7 @@ export function ChatContainer() {
               Your AI tutor for froth flotation. Ask questions, work through scenarios, or test your knowledge.
             </p>
 
-            {/* Mode cards — clickable */}
+            {/* Mode cards */}
             <div className="mt-8 grid grid-cols-3 gap-3">
               {MODE_CARDS.map(({ mode, icon: Icon, label, desc, color, bg }) => (
                 <button
@@ -146,35 +169,34 @@ export function ChatContainer() {
             </div>
           </div>
         </div>
-
-        {/* Mode selector modal (triggered from mode cards) */}
-        {modeSelectorTarget && (
-          <ModeSelector
-            mode={modeSelectorTarget}
-            onStart={handleModeStart}
-            onClose={() => setModeSelectorTarget(null)}
-            isLoading={isStartingModeSession}
-          />
-        )}
+        {modeModal}
       </>
     );
   }
 
+  // ── Session creation spinner ─────────────────────────────────────────────────
   if (isCreatingSession) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Starting session…</p>
+      <>
+        <div className="flex flex-1 items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Starting session…</p>
+          </div>
         </div>
-      </div>
+        {modeModal}
+      </>
     );
   }
 
+  // ── Active chat ──────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-      <MessageList />
-      <InputArea />
-    </div>
+    <>
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        <MessageList />
+        <InputArea />
+      </div>
+      {modeModal}
+    </>
   );
 }

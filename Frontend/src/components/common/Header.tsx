@@ -34,7 +34,7 @@ export function Header() {
   const sessions = useChatStore((state) => state.sessions);
   const isStartingModeSession = useChatStore((s) => s.isStartingModeSession);
 
-  const { toggleVideoPreference, switchMode, startModeSession, activeModeSession } = useChat();
+  const { toggleVideoPreference, switchMode, startModeSession, activeModeSession, isSwitchingMode } = useChat();
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -106,11 +106,20 @@ export function Header() {
 
           {/* Center: mode tabs (only shown when session exists) */}
           {currentSessionId && (
-            <div className="flex items-center gap-1 rounded-xl bg-muted/50 border border-border/50 p-1">
+            <div className="relative flex items-center gap-1 rounded-xl bg-muted/50 border border-border/50 p-1">
+              {/* Overlay while starting a practice/review session */}
+              {isStartingModeSession && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center gap-1.5 rounded-xl bg-background/80 backdrop-blur-sm">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                  <span className="text-xs font-medium text-primary">Starting session…</span>
+                </div>
+              )}
               <TooltipProvider delayDuration={300}>
                 {MODE_TABS.map(({ mode, label, icon: Icon, color, activeColor }) => {
                   const isActive = currentMode === mode;
                   const isRunning = activeModeSession?.mode === mode && !activeModeSession?.completed;
+                  // Show spinner on the tab we are switching TO
+                  const isThisTabSwitching = isSwitchingMode && mode === 'learn';
                   const tooltipText =
                     mode === 'learn'    ? 'Learn' :
                     mode === 'practice' ? 'Practice' :
@@ -120,7 +129,7 @@ export function Header() {
                       <TooltipTrigger asChild>
                         <button
                           onClick={() => handleModeClick(mode)}
-                          disabled={isStartingModeSession}
+                          disabled={isStartingModeSession || isSwitchingMode}
                           className={cn(
                             'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
                             'disabled:opacity-50 disabled:cursor-not-allowed',
@@ -129,16 +138,20 @@ export function Header() {
                               : cn('hover:bg-muted/70', color, 'hover:text-foreground')
                           )}
                         >
-                          <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+                          {isThisTabSwitching ? (
+                            <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin" />
+                          ) : (
+                            <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+                          )}
                           <span className="hidden sm:inline">{label}</span>
                           {/* Green dot when actively running */}
-                          {isRunning && (
+                          {isRunning && !isThisTabSwitching && (
                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
                           )}
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="bottom" className="text-xs">
-                        {tooltipText}
+                        {isSwitchingMode && mode === 'learn' ? 'Switching to Learn…' : tooltipText}
                       </TooltipContent>
                     </Tooltip>
                   );

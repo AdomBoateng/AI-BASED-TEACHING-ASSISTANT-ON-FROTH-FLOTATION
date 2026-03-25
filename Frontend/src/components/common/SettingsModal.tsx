@@ -171,9 +171,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             <div className="rounded-lg bg-muted/50 p-3 text-xs">
               <p className="font-medium mb-1">Current Configuration:</p>
               <div className="space-y-0.5 text-muted-foreground">
-                <p>• Avatar: {currentAvatarId === 'amy' ? 'Amy (Female)' : 'Josh (Male)'}</p>
-                <p>• Voice ID: {user.voice_id || 'Not set'}</p>
-                <p>• Provider: {user.voice_provider || 'Not set'}</p>
+                <p>Avatar: {currentAvatarId === 'amy' ? 'Amy (Female)' : 'Josh (Male)'}</p>
               </div>
             </div>
           )}
