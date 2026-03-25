@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 const uuidv4 = () => crypto.randomUUID();
-import type { Message, Session, VideoResponse, TutorMode } from '@/types';
+import type { Message, Session, VideoResponse, TutorMode, ActiveModeSession } from '@/types';
 
 export interface ChatState {
   sessions: Session[];
@@ -11,7 +11,13 @@ export interface ChatState {
   isGeneratingVideo: boolean;
   currentVideoResponse: VideoResponse | null;
   error: string | null;
-  isCreatingSession: boolean;  // ✅ NEW: Track session creation state
+  isCreatingSession: boolean;
+
+  // ── Mode session tracking ──────────────────────────────────────────────────
+  // Holds the active practice / review session. Null when in learn mode.
+  activeModeSession: ActiveModeSession | null;
+  // True while we're waiting for /mode-sessions/start to return
+  isStartingModeSession: boolean;
 
   createSession: (firstMessage?: string, mode?: TutorMode, backendSessionId?: string) => Session;
   setCurrentSession: (id: string | null) => void;
@@ -24,7 +30,12 @@ export interface ChatState {
   setIsGeneratingVideo: (v: boolean) => void;
   setVideoResponse: (v: VideoResponse | null) => void;
   setError: (v: string | null) => void;
-  setIsCreatingSession: (v: boolean) => void;  // ✅ NEW
+  setIsCreatingSession: (v: boolean) => void;
+
+  // Mode session actions
+  setActiveModeSession: (v: ActiveModeSession | null) => void;
+  setIsStartingModeSession: (v: boolean) => void;
+  updateActiveModeSession: (updates: Partial<ActiveModeSession>) => void;
 
   // Legacy aliases
   conversations: Session[];
@@ -45,16 +56,18 @@ export const useChatStore = create<ChatState>()(
       isGeneratingVideo: false,
       currentVideoResponse: null,
       error: null,
-      isCreatingSession: false,  // ✅ NEW
+      isCreatingSession: false,
+      activeModeSession: null,
+      isStartingModeSession: false,
 
       createSession: (firstMessage, mode = 'learn', backendSessionId) => {
-        // ✅ CHANGED: Accept optional backend session ID
         const session: Session = {
-          id: backendSessionId || uuidv4(),  // Use backend ID if provided
+          id: backendSessionId || uuidv4(),
           title: firstMessage
             ? firstMessage.slice(0, 40) + (firstMessage.length > 40 ? '…' : '')
             : 'New session',
           mode,
+          currentMode: mode,
           prefersVideo: true,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -66,12 +79,19 @@ export const useChatStore = create<ChatState>()(
           messages: [],
           currentVideoResponse: null,
           error: null,
+          activeModeSession: null,
         }));
         return session;
       },
 
       setCurrentSession: (id) =>
-        set({ currentSessionId: id, messages: [], currentVideoResponse: null, error: null }),
+        set({
+          currentSessionId: id,
+          messages: [],
+          currentVideoResponse: null,
+          error: null,
+          activeModeSession: null,
+        }),
 
       updateSession: (id, updates) =>
         set((state) => ({
@@ -84,7 +104,12 @@ export const useChatStore = create<ChatState>()(
         set((state) => ({
           sessions: state.sessions.filter((s) => s.id !== id),
           ...(state.currentSessionId === id
-            ? { currentSessionId: null, messages: [], currentVideoResponse: null }
+            ? {
+                currentSessionId: null,
+                messages: [],
+                currentVideoResponse: null,
+                activeModeSession: null,
+              }
             : {}),
         })),
 
@@ -100,7 +125,9 @@ export const useChatStore = create<ChatState>()(
                     ...s,
                     messageCount: newMessages.length,
                     previewMessage:
-                      message.role === 'assistant' ? message.content.slice(0, 60) : s.previewMessage,
+                      message.role === 'assistant'
+                        ? message.content.slice(0, 60)
+                        : s.previewMessage,
                     updatedAt: new Date(),
                   }
                 : s
@@ -115,14 +142,26 @@ export const useChatStore = create<ChatState>()(
       setIsGeneratingVideo: (v) => set({ isGeneratingVideo: v }),
       setVideoResponse: (v) => set({ currentVideoResponse: v }),
       setError: (v) => set({ error: v }),
-      setIsCreatingSession: (v) => set({ isCreatingSession: v }),  // ✅ NEW
+      setIsCreatingSession: (v) => set({ isCreatingSession: v }),
+
+      setActiveModeSession: (v) => set({ activeModeSession: v }),
+      setIsStartingModeSession: (v) => set({ isStartingModeSession: v }),
+      updateActiveModeSession: (updates) =>
+        set((state) =>
+          state.activeModeSession
+            ? { activeModeSession: { ...state.activeModeSession, ...updates } }
+            : {}
+        ),
 
       // Legacy aliases
-      get conversations() { return get().sessions; },
-      get currentConversationId() { return get().currentSessionId; },
+      get conversations() {
+        return get().sessions;
+      },
+      get currentConversationId() {
+        return get().currentSessionId;
+      },
       setCurrentConversation: (id) => get().setCurrentSession(id),
-      addConversation: (s) =>
-        set((state) => ({ sessions: [s, ...state.sessions] })),
+      addConversation: (s) => set((state) => ({ sessions: [s, ...state.sessions] })),
       deleteConversation: (id) => get().deleteSession(id),
       setConversations: (sessions) => set({ sessions }),
     }),

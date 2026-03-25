@@ -30,10 +30,10 @@ export interface SignupResponse {
   note?: string;
 }
 
-// ─── RAG/Chat ─────────────────────────────────────────────────────────────────
+// ─── RAG/Chat (Learn mode) ────────────────────────────────────────────────────
 export interface RagTurnRequest {
   session_id: string;
-  mode: 'learn';  // Only "learn" allowed in /rag/turn
+  mode: 'learn';
   message: string;
 }
 
@@ -44,11 +44,11 @@ export interface RagTurnResponse {
   video_url?: string | null;
   subtitle_url?: string | null;
   audio_url?: string | null;
-  did_payload?: any;
+  did_payload?: unknown;
 }
 
 export interface VoiceTurnResponse extends RagTurnResponse {
-  transcript: string;  // The transcribed text from audio
+  transcript: string;
 }
 
 // ─── Sessions ─────────────────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ export interface SessionModeUpdateRequest {
 export interface SessionModeUpdateResponse {
   session_id: string;
   current_mode: 'learn' | 'practice' | 'review';
-  prefers_video: boolean;  // Will be false if mode is "review"
+  prefers_video: boolean;
 }
 
 export interface VideoToggleRequest {
@@ -120,10 +120,10 @@ export interface AvatarSelectResponse {
 // ─── Feedback ─────────────────────────────────────────────────────────────────
 export interface SessionSurveyRequest {
   session_id: string;
-  clarity_rating: number;      // 1-5
-  helpfulness_rating: number;  // 1-5
-  confidence_rating: number;   // 1-5
-  overall_rating: number;      // 1-5
+  clarity_rating: number;
+  helpfulness_rating: number;
+  confidence_rating: number;
+  overall_rating: number;
 }
 
 export interface UserFeedbackRequest {
@@ -137,8 +137,8 @@ export interface FeedbackResponse {
   id?: string | null;
 }
 
-// ─── Mode Sessions (Practice/Review) ──────────────────────────────────────────
-// These are inferred from models.py but routes not provided yet
+// ─── Mode Sessions (Practice / Review) ───────────────────────────────────────
+
 export interface ModeSessionStartRequest {
   session_id: string;
   mode: 'practice' | 'review';
@@ -150,3 +150,77 @@ export interface ModeSessionStartRequest {
 export interface ModeSessionTurnRequest {
   message: string;
 }
+
+// Delivery block returned by backend for video/audio
+export interface DeliveryBlock {
+  response_format: 'text' | 'video';
+  video_url?: string | null;
+  audio_url?: string | null;
+  subtitle_url?: string | null;
+}
+
+// What the backend returns from POST /mode-sessions/start
+export interface ModeSessionStartResponse {
+  mode_session_id: string;
+  mode: 'practice' | 'review';
+  session_type: string;
+  difficulty: string;
+  prompt: string;
+  // delivery fields (practice can have video; review is always text)
+  response_format: 'text' | 'video';
+  video_url?: string | null;
+  audio_url?: string | null;
+  subtitle_url?: string | null;
+}
+
+// Evaluation object inside a turn response
+export interface PracticeEvaluation {
+  verdict: 'correct' | 'partial' | 'incorrect';
+  score: number;
+  feedback: string;
+  missing_points: string[];
+  unsupported_claims: string[];
+}
+
+export interface ReviewEvaluation {
+  verdict: 'correct' | 'partial' | 'incorrect';
+  score: number;
+  rubric_level: 'Excellent' | 'Good' | 'Satisfactory' | 'Needs Improvement' | 'Unsatisfactory';
+  feedback: string;
+  missing_points: string[];
+  unsupported_claims: string[];
+  // Present for MCQ and fill_blank item types
+  correct_answer?: string;
+}
+
+// Practice turn response
+export interface PracticeTurnResponse {
+  mode: 'practice';
+  type: 'evaluation' | 'completed';
+  evaluation: PracticeEvaluation;
+  // evaluation delivery (video possible)
+  delivery?: DeliveryBlock;
+  // present when type === 'evaluation'
+  next_prompt?: string;
+  next_delivery?: DeliveryBlock;
+  // present when type === 'completed'
+  key_learning_points?: string[];
+  summary?: string;
+  key_delivery?: DeliveryBlock;
+}
+
+// Review turn response
+export interface ReviewTurnResponse {
+  mode: 'review';
+  type: 'evaluation' | 'completed';
+  evaluation: ReviewEvaluation;
+  response_format: 'text';
+  video_url: null;
+  // present when type === 'evaluation'
+  next_prompt?: string;
+  next_difficulty?: string;
+  // transcript present when called via voice endpoint
+  transcript?: string;
+}
+
+export type ModeSessionTurnResponse = PracticeTurnResponse | ReviewTurnResponse;

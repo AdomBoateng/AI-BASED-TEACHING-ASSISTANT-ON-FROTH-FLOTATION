@@ -30,9 +30,11 @@ export const API_ENDPOINTS = {
   FEEDBACK_SESSION_SURVEY: '/feedback/session-survey',
   FEEDBACK_USER: '/feedback/user-feedback',
 
-  // Mode Sessions (Practice/Review) - routes not provided yet, inferred
+  // Mode Sessions (Practice / Review)
   MODE_SESSIONS_START: '/mode-sessions/start',
   MODE_SESSIONS_TURN: (id: string) => `/mode-sessions/${id}/turn`,
+  MODE_SESSIONS_TURN_VOICE: (id: string) => `/mode-sessions/${id}/turn/voice`,
+  MODE_SESSIONS_END: (id: string) => `/mode-sessions/${id}/end`,
 } as const;
 
 export const ERROR_MESSAGES = {
@@ -50,3 +52,14 @@ export const AUDIO_CONSTRAINTS = {
     autoGainControl: true,
   },
 } as const;
+
+// ─── Mode session config ──────────────────────────────────────────────────────
+export const SESSION_TYPES = [
+  { value: 'flotation_basics', label: 'Flotation Basics' },
+  { value: 'reagents', label: 'Reagents & Chemistry' },
+  { value: 'process_variables', label: 'Process Variables' },
+  { value: 'troubleshooting', label: 'Troubleshooting' },
+  { value: 'surface_chemistry', label: 'Surface Chemistry' },
+] as const;
+
+export const DIFFICULTY_LEVELS = ['Basic', 'Intermediate', 'Advanced'] as const;

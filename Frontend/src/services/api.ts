@@ -19,6 +19,10 @@ import type {
   SessionSurveyRequest,
   UserFeedbackRequest,
   FeedbackResponse,
+  ModeSessionStartRequest,
+  ModeSessionStartResponse,
+  ModeSessionTurnRequest,
+  ModeSessionTurnResponse,
 } from '@/types';
 
 // ─── Cookie-based token store (accessible by middleware) ─────────────────────
@@ -89,7 +93,9 @@ class ApiClient {
         try {
           const errBody = await response.json();
           message = errBody?.detail ?? message;
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         return { success: false, error: { code: String(response.status), message } };
       }
 
@@ -156,17 +162,10 @@ class ApiClient {
     });
   }
 
-  /**
-   * Upload voice recording for learn mode.
-   * Returns transcript + standard RAG response.
-   */
   async uploadVoice(sessionId: string, audioBlob: Blob) {
     const formData = new FormData();
     formData.append('file', audioBlob, 'recording.webm');
-
-    // session_id as query param per backend signature
     const url = `${API_ENDPOINTS.RAG_TURN_VOICE}?session_id=${sessionId}`;
-
     return this.request<VoiceTurnResponse>(url, {
       method: 'POST',
       body: formData,
@@ -181,45 +180,81 @@ class ApiClient {
   }
 
   getSession(sessionId: string) {
-    return this.request<SessionDetailsResponse>(
-      API_ENDPOINTS.SESSIONS_GET(sessionId)
-    );
+    return this.request<SessionDetailsResponse>(API_ENDPOINTS.SESSIONS_GET(sessionId));
   }
 
   /**
-   * Switch session mode (learn/practice/review).
-   * If switching to review, prefers_video is forced to false.
+   * Switch session mode on the backend (learn/practice/review).
+   * Backend enforces: review → prefers_video forced to false.
    */
   switchSessionMode(sessionId: string, mode: 'learn' | 'practice' | 'review') {
-    return this.request<SessionModeUpdateResponse>(
-      API_ENDPOINTS.SESSIONS_MODE(sessionId),
-      {
-        method: 'PATCH',
-        body: JSON.stringify({ current_mode: mode } as SessionModeUpdateRequest),
-      }
-    );
+    return this.request<SessionModeUpdateResponse>(API_ENDPOINTS.SESSIONS_MODE(sessionId), {
+      method: 'PATCH',
+      body: JSON.stringify({ current_mode: mode } as SessionModeUpdateRequest),
+    });
   }
 
-  /**
-   * Toggle video preference for this session.
-   * Fails with 400 if session is in review mode.
-   */
   setVideoPreference(sessionId: string, prefersVideo: boolean) {
-    return this.request<VideoToggleResponse>(
-      API_ENDPOINTS.SESSIONS_VIDEO(sessionId),
-      {
-        method: 'PATCH',
-        body: JSON.stringify({ prefers_video: prefersVideo } as VideoToggleRequest),
-      }
-    );
+    return this.request<VideoToggleResponse>(API_ENDPOINTS.SESSIONS_VIDEO(sessionId), {
+      method: 'PATCH',
+      body: JSON.stringify({ prefers_video: prefersVideo } as VideoToggleRequest),
+    });
   }
 
   endSession(sessionId: string) {
-    return this.request<EndSessionResponse>(
-      API_ENDPOINTS.SESSIONS_END(sessionId),
+    return this.request<EndSessionResponse>(API_ENDPOINTS.SESSIONS_END(sessionId), {
+      method: 'POST',
+    });
+  }
+
+  // ─── Mode Sessions (Practice / Review) ───────────────────────────────────
+
+  /**
+   * POST /mode-sessions/start
+   * Creates a mode_session row, generates first prompt, returns mode_session_id + prompt.
+   */
+  startModeSession(payload: ModeSessionStartRequest) {
+    return this.request<ModeSessionStartResponse>(API_ENDPOINTS.MODE_SESSIONS_START, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * POST /mode-sessions/{mode_session_id}/turn
+   * Submit student answer; get evaluation + optional next prompt.
+   */
+  modeSessionTurn(modeSessionId: string, payload: ModeSessionTurnRequest) {
+    return this.request<ModeSessionTurnResponse>(
+      API_ENDPOINTS.MODE_SESSIONS_TURN(modeSessionId),
       {
         method: 'POST',
+        body: JSON.stringify(payload),
       }
+    );
+  }
+
+  /**
+   * POST /mode-sessions/{mode_session_id}/end
+   * Manually end a practice/review session.
+   */
+  endModeSession(modeSessionId: string) {
+    return this.request<{ mode_session_id: string; status: string }>(
+      API_ENDPOINTS.MODE_SESSIONS_END(modeSessionId),
+      { method: 'POST' }
+    );
+  }
+
+  /**
+   * POST /mode-sessions/{mode_session_id}/turn/voice
+   * Voice input for practice/review modes.
+   */
+  async uploadModeVoice(modeSessionId: string, audioBlob: Blob) {
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.webm');
+    return this.request<ModeSessionTurnResponse & { transcript: string }>(
+      API_ENDPOINTS.MODE_SESSIONS_TURN_VOICE(modeSessionId),
+      { method: 'POST', body: formData }
     );
   }
 
@@ -236,24 +271,18 @@ class ApiClient {
   }
 
   updateAvatar(avatarId: 'amy' | 'josh') {
-    return this.request<AvatarSelectResponse>(
-      API_ENDPOINTS.USERS_AVATAR_UPDATE,
-      {
-        method: 'PATCH',
-        body: JSON.stringify({ avatar_id: avatarId } as AvatarSelectRequest),
-      }
-    );
+    return this.request<AvatarSelectResponse>(API_ENDPOINTS.USERS_AVATAR_UPDATE, {
+      method: 'PATCH',
+      body: JSON.stringify({ avatar_id: avatarId } as AvatarSelectRequest),
+    });
   }
 
   // ─── Feedback ─────────────────────────────────────────────────────────────
   submitSessionSurvey(payload: SessionSurveyRequest) {
-    return this.request<FeedbackResponse>(
-      API_ENDPOINTS.FEEDBACK_SESSION_SURVEY,
-      {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }
-    );
+    return this.request<FeedbackResponse>(API_ENDPOINTS.FEEDBACK_SESSION_SURVEY, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   }
 
   submitUserFeedback(payload: UserFeedbackRequest) {
