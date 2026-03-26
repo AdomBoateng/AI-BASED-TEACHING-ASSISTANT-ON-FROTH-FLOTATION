@@ -15,6 +15,9 @@ interface ModeSelectorProps {
   ) => Promise<void>;
   onClose: () => void;
   isLoading?: boolean;
+  // ✅ Fix #9: remember selection across open/close cycles
+  defaultSessionType?: string;
+  defaultDifficulty?: 'Basic' | 'Intermediate' | 'Advanced';
 }
 
 const MODE_META = {
@@ -40,11 +43,11 @@ const MODE_META = {
   },
 };
 
-export function ModeSelector({ mode, onStart, onClose, isLoading = false }: ModeSelectorProps) {
+export function ModeSelector({ mode, onStart, onClose, isLoading = false, defaultSessionType, defaultDifficulty }: ModeSelectorProps) {
   const sessionTypes = mode === 'practice' ? PRACTICE_SESSION_TYPES : REVIEW_SESSION_TYPES;
 
-  const [sessionType, setSessionType] = useState<string>(sessionTypes[0].value);
-  const [difficulty, setDifficulty] = useState<'Basic' | 'Intermediate' | 'Advanced'>('Basic');
+  const [sessionType, setSessionType] = useState<string>(defaultSessionType ?? sessionTypes[0].value);
+  const [difficulty, setDifficulty] = useState<'Basic' | 'Intermediate' | 'Advanced'>(defaultDifficulty ?? 'Basic');
 
   const meta = MODE_META[mode];
   const Icon = meta.icon;

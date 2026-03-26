@@ -50,8 +50,7 @@ export function InputArea() {
   const {
     sendMessage,
     sendModeMessage,
-    switchReviewType,
-    switchPracticeType,
+    switchSessionType,
     isLoadingMessage,
     isStartingModeSession,
     activeModeSession,
@@ -63,8 +62,9 @@ export function InputArea() {
   const currentMode = currentSession?.currentMode ?? 'learn';
 
   const inModeSession  = !!activeModeSession && !activeModeSession.completed;
-  const isPractice     = inModeSession && activeModeSession?.mode === 'practice';
-  const isReview       = inModeSession && activeModeSession?.mode === 'review';
+  const hasModeSession = !!activeModeSession; // true even when completed
+  const isPractice     = hasModeSession && activeModeSession?.mode === 'practice';
+  const isReview       = hasModeSession && activeModeSession?.mode === 'review';
   const showPill       = isPractice || isReview;
   const isSwitching    = isStartingModeSession;
 
@@ -112,116 +112,131 @@ export function InputArea() {
 
   const handleSwitchType = async (newType: string) => {
     setShowTypeSwitcher(false);
-    if (isPractice) {
-      await switchPracticeType(newType);
-    } else {
-      await switchReviewType(newType);
-    }
+    await switchSessionType(newType);
   };
 
   return (
     <div className="flex-shrink-0 border-t border-border/50 bg-background/95 backdrop-blur px-4 py-3">
       <div className="mx-auto max-w-3xl">
 
-        {/* Progress bar row */}
-        {inModeSession && activeModeSession && (
+        {/* Progress bar row — pill always visible when a mode session exists; progress bar only when active */}
+        {activeModeSession && showPill && (
           <div className="mb-2 flex items-center gap-2">
 
-            {/* Type switcher pill — shown for both practice and review */}
-            {showPill && (
-              <div className="relative flex-shrink-0">
-                <button
-                  onClick={() => setShowTypeSwitcher((v) => !v)}
-                  disabled={isSwitching || isLoadingMessage}
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium transition-all',
-                    pillStyles.pill,
-                    'disabled:opacity-50 disabled:cursor-not-allowed'
-                  )}
-                >
-                  {isSwitching ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <span className={cn('h-1.5 w-1.5 rounded-full', pillStyles.dot)} />
-                  )}
-                  {TYPE_LABELS[activeModeSession.sessionType] ?? activeModeSession.sessionType}
-                  <ChevronDown className={cn(
-                    'h-3 w-3 transition-transform duration-200',
-                    showTypeSwitcher && 'rotate-180'
-                  )} />
-                </button>
-
-                {/* Dropdown — opens upward */}
-                {showTypeSwitcher && (
-                  <>
-                    {/* Click-away backdrop */}
-                    <div
-                      className="fixed inset-0 z-10"
-                      onClick={() => setShowTypeSwitcher(false)}
-                    />
-                    <div className="absolute bottom-full left-0 z-20 mb-2 w-56 rounded-xl border border-border bg-card shadow-xl overflow-hidden">
-                      <div className="px-3 py-2 border-b border-border/50">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                          {pillStyles.header}
-                        </p>
-                      </div>
-                      {sessionTypes.map((type) => {
-                        const isActive = activeModeSession.sessionType === type.value;
-                        return (
-                          <button
-                            key={type.value}
-                            onClick={() => handleSwitchType(type.value)}
-                            disabled={isActive}
-                            className={cn(
-                              'flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors',
-                              isActive
-                                ? cn('cursor-default', pillStyles.active)
-                                : 'hover:bg-muted/60 cursor-pointer'
-                            )}
-                          >
-                            <CheckCircle2 className={cn(
-                              'mt-0.5 h-3.5 w-3.5 flex-shrink-0 transition-colors',
-                              isActive ? pillStyles.activeText : 'text-transparent'
-                            )} />
-                            <div className="min-w-0">
-                              <p className={cn(
-                                'text-xs font-medium',
-                                isActive ? pillStyles.activeText : 'text-foreground'
-                              )}>
-                                {type.label}
-                              </p>
-                              {'desc' in type && (
-                                <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
-                                  {type.desc}
-                                </p>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* Progress bar */}
-            <div className="h-1 flex-1 rounded-full bg-muted overflow-hidden">
-              <div
+            {/* Type switcher pill — shown for both practice and review, even when completed */}
+            <div className="relative flex-shrink-0">
+              <button
+                onClick={() => setShowTypeSwitcher((v) => !v)}
+                disabled={isSwitching || isLoadingMessage}
                 className={cn(
-                  'h-1 rounded-full transition-all duration-500',
-                  activeModeSession.mode === 'practice' ? 'bg-emerald-500' : 'bg-amber-500'
+                  'flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium transition-all',
+                  pillStyles.pill,
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
                 )}
-                style={{
-                  width: `${((activeModeSession.currentStep - 1) / activeModeSession.totalSteps) * 100}%`,
-                }}
-              />
+              >
+                {isSwitching ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <span className={cn('h-1.5 w-1.5 rounded-full', pillStyles.dot)} />
+                )}
+                {TYPE_LABELS[activeModeSession.sessionType] ?? activeModeSession.sessionType}
+                <ChevronDown className={cn(
+                  'h-3 w-3 transition-transform duration-200',
+                  showTypeSwitcher && 'rotate-180'
+                )} />
+              </button>
+
+              {/* Dropdown — opens upward */}
+              {showTypeSwitcher && (
+                <>
+                  {/* Click-away backdrop */}
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowTypeSwitcher(false)}
+                  />
+                  <div className="absolute bottom-full left-0 z-20 mb-2 w-56 rounded-xl border border-border bg-card shadow-xl overflow-hidden">
+                    <div className="px-3 py-2 border-b border-border/50">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {pillStyles.header}
+                      </p>
+                    </div>
+                    {sessionTypes.map((type) => {
+                      const isActive = activeModeSession.sessionType === type.value;
+                      return (
+                        <button
+                          key={type.value}
+                          onClick={() => handleSwitchType(type.value)}
+                          disabled={isActive && !activeModeSession.completed}
+                          className={cn(
+                            'flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors',
+                            isActive && !activeModeSession.completed
+                              ? cn('cursor-default', pillStyles.active)
+                              : 'hover:bg-muted/60 cursor-pointer'
+                          )}
+                        >
+                          <CheckCircle2 className={cn(
+                            'mt-0.5 h-3.5 w-3.5 flex-shrink-0 transition-colors',
+                            isActive && !activeModeSession.completed ? pillStyles.activeText : 'text-transparent'
+                          )} />
+                          <div className="min-w-0">
+                            <p className={cn(
+                              'text-xs font-medium',
+                              isActive && !activeModeSession.completed ? pillStyles.activeText : 'text-foreground'
+                            )}>
+                              {type.label}
+                            </p>
+                            {'desc' in type && (
+                              <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                                {type.desc}
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
 
-            {/* Step counter */}
-            <span className="flex-shrink-0 text-[11px] text-muted-foreground">
-              {activeModeSession.mode === 'practice' ? 'Step' : 'Q'}{' '}
-              {activeModeSession.currentStep}/{activeModeSession.totalSteps}
+            {/* Progress bar — only shown during active session */}
+            {inModeSession && (
+              <>
+                <div className="h-1 flex-1 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={cn(
+                      'h-1 rounded-full transition-all duration-500',
+                      activeModeSession.mode === 'practice' ? 'bg-emerald-500' : 'bg-amber-500'
+                    )}
+                    style={{
+                      width: `${((activeModeSession.currentStep - 1) / activeModeSession.totalSteps) * 100}%`,
+                    }}
+                  />
+                </div>
+
+                {/* Step counter */}
+                <span className="flex-shrink-0 text-[11px] text-muted-foreground">
+                  {activeModeSession.mode === 'practice' ? 'Step' : 'Q'}{' '}
+                  {activeModeSession.currentStep}/{activeModeSession.totalSteps}
+                </span>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ✅ Fix #3: session completed banner */}
+        {activeModeSession?.completed && (
+          <div className={cn(
+            'mb-2 flex items-center justify-between rounded-lg border px-3 py-2 text-xs',
+            activeModeSession.mode === 'practice'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+              : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+          )}>
+            <span>
+              {activeModeSession.mode === 'practice' ? '🎉' : '🎓'} Session complete!
+            </span>
+            <span className="text-muted-foreground">
+              Switch topic or change mode to continue
             </span>
           </div>
         )}
@@ -235,7 +250,7 @@ export function InputArea() {
             onChange={handleInput}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
-            disabled={isLoadingMessage || isSwitching}
+            disabled={isLoadingMessage || isSwitching || activeModeSession?.completed}
             rows={1}
             className="
               flex-1 resize-none bg-transparent text-sm text-foreground
@@ -249,7 +264,7 @@ export function InputArea() {
 
           <Button
             onClick={handleSend}
-            disabled={!message.trim() || isLoadingMessage || isSwitching}
+            disabled={!message.trim() || isLoadingMessage || isSwitching || activeModeSession?.completed}
             size="icon"
             className="h-8 w-8 rounded-lg flex-shrink-0"
           >

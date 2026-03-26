@@ -1,7 +1,19 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-const uuidv4 = () => crypto.randomUUID();
 import type { Message, Session, VideoResponse, TutorMode, ActiveModeSession } from '@/types';
+
+// Shared uuid util — safe fallback for non-secure contexts (HTTP) and SSR
+export const newId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Fallback: RFC4122 v4 UUID via Math.random
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
 
 export interface ChatState {
   sessions: Session[];
@@ -14,11 +26,8 @@ export interface ChatState {
   isCreatingSession: boolean;
 
   // ── Mode session tracking ──────────────────────────────────────────────────
-  // Holds the active practice / review session. Null when in learn mode.
   activeModeSession: ActiveModeSession | null;
-  // True while we're waiting for /mode-sessions/start to return
   isStartingModeSession: boolean;
-  // True while switchMode API call is in flight (learn tab spinner)
   isSwitchingMode: boolean;
 
   createSession: (firstMessage?: string, mode?: TutorMode, backendSessionId?: string) => Session;
@@ -34,7 +43,6 @@ export interface ChatState {
   setError: (v: string | null) => void;
   setIsCreatingSession: (v: boolean) => void;
 
-  // Mode session actions
   setActiveModeSession: (v: ActiveModeSession | null) => void;
   setIsStartingModeSession: (v: boolean) => void;
   setIsSwitchingMode: (v: boolean) => void;
@@ -66,7 +74,7 @@ export const useChatStore = create<ChatState>()(
 
       createSession: (firstMessage, mode = 'learn', backendSessionId) => {
         const session: Session = {
-          id: backendSessionId || uuidv4(),
+          id: backendSessionId || newId(),
           title: firstMessage
             ? firstMessage.slice(0, 40) + (firstMessage.length > 40 ? '…' : '')
             : 'New session',
@@ -159,12 +167,8 @@ export const useChatStore = create<ChatState>()(
         ),
 
       // Legacy aliases
-      get conversations() {
-        return get().sessions;
-      },
-      get currentConversationId() {
-        return get().currentSessionId;
-      },
+      get conversations() { return get().sessions; },
+      get currentConversationId() { return get().currentSessionId; },
       setCurrentConversation: (id) => get().setCurrentSession(id),
       addConversation: (s) => set((state) => ({ sessions: [s, ...state.sessions] })),
       deleteConversation: (id) => get().deleteSession(id),
@@ -172,7 +176,11 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: 'meraki-chat-store',
-      partialize: (state) => ({ sessions: state.sessions }),
+      // ✅ Fix #1: persist activeModeSession so page refresh restores mid-session state
+      partialize: (state) => ({
+        sessions: state.sessions,
+        activeModeSession: state.activeModeSession,
+      }),
     }
   )
 );

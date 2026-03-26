@@ -235,6 +235,16 @@ export function Header() {
           onStart={handleModeStart}
           onClose={() => setModeSelectorTarget(null)}
           isLoading={isStartingModeSession}
+          defaultSessionType={
+            activeModeSession?.mode === modeSelectorTarget
+              ? activeModeSession.sessionType
+              : undefined
+          }
+          defaultDifficulty={
+            activeModeSession?.mode === modeSelectorTarget
+              ? activeModeSession.difficulty as 'Basic' | 'Intermediate' | 'Advanced'
+              : undefined
+          }
         />
       )}
     </>

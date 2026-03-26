@@ -52,11 +52,7 @@ export function ChatContainer() {
 
   const [clickedQuickStart, setClickedQuickStart] = useState<string | null>(null);
 
-  // ── Modal state lives HERE at the top level so it survives re-renders ───────
-  // When the user clicks Practice/Review on the welcome screen, we:
-  //   1. Set modeSelectorTarget immediately (opens modal)
-  //   2. Create the backend session in the background
-  //   3. Modal stays open regardless of whether showWelcome flips
+  // ── Modal state lives at top level so it survives re-renders ────────────────
   const [modeSelectorTarget, setModeSelectorTarget] = useState<'practice' | 'review' | null>(null);
 
   const showWelcome = !currentSessionId && !isCreatingSession;
@@ -67,22 +63,17 @@ export function ChatContainer() {
     setClickedQuickStart(null);
   };
 
-  const handleModeCardClick = async (mode: 'learn' | 'practice' | 'review') => {
+  const handleModeCardClick = (mode: 'learn' | 'practice' | 'review') => {
     if (mode === 'learn') {
-      await startNewSession(undefined, 'learn');
+      // Learn needs no config — just create a session and wait for first message
+      startNewSession(undefined, 'learn');
       return;
     }
-
-    // ✅ FIX: Open the modal FIRST before any async work.
-    // This means the modal is already mounted when currentSessionId gets set,
-    // so it won't be lost when showWelcome flips to false.
+    // ✅ FIX: Open modal ONLY. Do NOT create a session here.
+    // The session is created inside startModeSession when the user confirms.
+    // This prevents the "Practice session starting..." ghost state when
+    // the user cancels the modal without selecting anything.
     setModeSelectorTarget(mode);
-
-    // Create backend session in the background if we don't have one yet.
-    // startModeSession (called from handleModeStart) will reuse it.
-    if (!currentSessionId) {
-      startNewSession(undefined, mode); // intentionally not awaited
-    }
   };
 
   const handleModeStart = async (
@@ -90,19 +81,23 @@ export function ChatContainer() {
     sessionType: string,
     difficulty: 'Basic' | 'Intermediate' | 'Advanced'
   ) => {
+    // startModeSession already handles creating the chat session if needed
     await startModeSession(mode, sessionType, difficulty);
     setModeSelectorTarget(null);
   };
 
-  // ── ModeSelector is rendered at the TOP LEVEL, outside all conditionals ─────
-  // This is the key fix: it doesn't matter whether we're showing the welcome
-  // screen or the chat view — the modal always renders when modeSelectorTarget
-  // is set, and is never unmounted by a re-render of the parent.
+  const handleModalClose = () => {
+    // ✅ FIX: Simply close the modal — no session was created yet, so nothing
+    // to clean up. The welcome screen stays as-is.
+    setModeSelectorTarget(null);
+  };
+
+  // Modal rendered at top level — survives all re-renders
   const modeModal = modeSelectorTarget ? (
     <ModeSelector
       mode={modeSelectorTarget}
       onStart={handleModeStart}
-      onClose={() => setModeSelectorTarget(null)}
+      onClose={handleModalClose}
       isLoading={isStartingModeSession}
     />
   ) : null;

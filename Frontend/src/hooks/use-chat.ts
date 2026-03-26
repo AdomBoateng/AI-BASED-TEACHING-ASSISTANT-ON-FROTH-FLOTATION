@@ -1,12 +1,15 @@
 'use client';
 
 import { useCallback } from 'react';
-const uuidv4 = () => crypto.randomUUID();
 import toast from 'react-hot-toast';
-import { useChatStore } from '@/store/chatStore';
+import { useChatStore, newId } from '@/store/chatStore';
 import { useUserStore } from '@/store/userStore';
 import { apiClient } from '@/services/api';
 import { parseVTT, getVideoDurationFromSubtitles } from '@/lib/vtt-parser';
+import {
+  PRACTICE_SESSION_TYPES,
+  REVIEW_SESSION_TYPES,
+} from '@/lib/constants';
 import type {
   Message,
   TutorMode,
@@ -14,23 +17,23 @@ import type {
   PracticeEvaluation,
   ReviewEvaluation,
 } from '@/types';
-import type { DeliveryBlock } from '@/types/api';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Label lookups derived from constants (Fix #10 — no inline duplication) ──
+const PRACTICE_LABELS = Object.fromEntries(
+  PRACTICE_SESSION_TYPES.map((t) => [t.value, t.label])
+);
+const REVIEW_LABELS = Object.fromEntries(
+  REVIEW_SESSION_TYPES.map((t) => [t.value, t.label])
+);
 
-function deliveryToVideoResponse(
-  delivery: DeliveryBlock | undefined,
-  subtitleUrl?: string | null
-) {
-  if (!delivery || delivery.response_format !== 'video' || !delivery.video_url) return null;
-  const subtitles = subtitleUrl ? parseVTT(subtitleUrl) : [];
-  const duration = getVideoDurationFromSubtitles(subtitles);
-  return {
-    videoUrl: delivery.video_url,
-    audioUrl: delivery.audio_url ?? undefined,
-    subtitles,
-    duration,
-  };
+function getModeSessionTitle(
+  mode: 'practice' | 'review',
+  sessionType: string
+): string {
+  if (mode === 'practice') {
+    return `Practice — ${PRACTICE_LABELS[sessionType] ?? sessionType}`;
+  }
+  return `Review — ${REVIEW_LABELS[sessionType] ?? sessionType}`;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -52,7 +55,6 @@ export function useChat() {
     setCurrentSession,
     deleteSession,
     addMessage,
-    setMessages,
     clearMessages,
     setIsLoadingMessage,
     setIsGeneratingVideo,
@@ -100,7 +102,7 @@ export function useChat() {
 
   // ── Learn mode message ─────────────────────────────────────────────────────
   const sendMessage = useCallback(
-    async (text: string, mode: TutorMode = 'learn') => {
+    async (text: string, mode: TutorMode = 'learn', isRetry = false) => {
       if (!text.trim()) return;
       if (!isAuthenticated) {
         toast.error('Please log in to continue.');
@@ -114,16 +116,19 @@ export function useChat() {
         sessionId = session.id;
       }
 
-      const userMsg: Message = {
-        id: uuidv4(),
-        sessionId,
-        role: 'user',
-        content: text.trim(),
-        responseFormat: 'text',
-        mode: 'learn',
-        timestamp: new Date(),
-      };
-      addMessage(userMsg);
+      // Only add a new user message when not retrying (retry reuses existing)
+      if (!isRetry) {
+        const userMsg: Message = {
+          id: newId(),
+          sessionId,
+          role: 'user',
+          content: text.trim(),
+          responseFormat: 'text',
+          mode: 'learn',
+          timestamp: new Date(),
+        };
+        addMessage(userMsg);
+      }
 
       setIsLoadingMessage(true);
       setIsGeneratingVideo(false);
@@ -145,7 +150,7 @@ export function useChat() {
         if (response_format === 'video') setIsGeneratingVideo(true);
 
         const aiMsg: Message = {
-          id: uuidv4(),
+          id: newId(),
           sessionId,
           role: 'assistant',
           content: response,
@@ -169,6 +174,7 @@ export function useChat() {
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unexpected error';
         setError(message);
+        // ✅ Fix #5: mark the last user message as failed so UI can show retry
         toast.error(message);
       } finally {
         setIsLoadingMessage(false);
@@ -188,6 +194,16 @@ export function useChat() {
     ]
   );
 
+  // ── Retry last failed learn message ───────────────────────────────────────
+  // ✅ Fix #5: find the last user message and re-send it without duplicating it
+  const retryLastMessage = useCallback(async () => {
+    const userMessages = messages.filter((m) => m.role === 'user');
+    if (!userMessages.length) return;
+    const last = userMessages[userMessages.length - 1];
+    setError(null);
+    await sendMessage(last.content, last.mode ?? 'learn', true);
+  }, [messages, sendMessage, setError]);
+
   // ── Start a Practice or Review mode session ────────────────────────────────
   const startModeSession = useCallback(
     async (
@@ -200,7 +216,6 @@ export function useChat() {
         return null;
       }
 
-      // Ensure we have a chat session first
       let sessionId = currentSessionId;
       if (!sessionId) {
         const session = await startNewSession(undefined, mode);
@@ -212,12 +227,15 @@ export function useChat() {
       setError(null);
 
       try {
-        // 1. Update session mode on backend + clear screen for clean slate
         await apiClient.switchSessionMode(sessionId, mode);
-        updateSession(sessionId, { currentMode: mode });
+
+        // ✅ Fix #6: meaningful session title instead of "New session"
+        updateSession(sessionId, {
+          currentMode: mode,
+          title: getModeSessionTitle(mode, sessionType),
+        });
         clearMessages();
 
-        // 2. Start the mode session
         const res = await apiClient.startModeSession({
           session_id: sessionId,
           mode,
@@ -229,17 +247,10 @@ export function useChat() {
           throw new Error(res.error?.message ?? 'Failed to start mode session');
         }
 
-        const {
-          mode_session_id,
-          prompt,
-          response_format,
-          video_url,
-          audio_url,
-        } = res.data;
+        const { mode_session_id, prompt, response_format, video_url, audio_url } = res.data;
 
         const totalSteps = mode === 'practice' ? 3 : 10;
 
-        // Store active mode session
         const activeSess: ActiveModeSession = {
           modeSessionId: mode_session_id,
           mode,
@@ -251,9 +262,8 @@ export function useChat() {
         };
         setActiveModeSession(activeSess);
 
-        // Add the opening prompt as an assistant message
         const promptMsg: Message = {
-          id: uuidv4(),
+          id: newId(),
           sessionId,
           role: 'assistant',
           content: prompt,
@@ -268,12 +278,9 @@ export function useChat() {
         };
         addMessage(promptMsg);
 
-        // Handle video for practice
         if (response_format === 'video' && video_url) {
           setIsGeneratingVideo(true);
-          const subtitles: never[] = [];
-          const duration = 0;
-          setVideoResponse({ videoUrl: video_url, audioUrl: audio_url ?? undefined, subtitles, duration });
+          setVideoResponse({ videoUrl: video_url, audioUrl: audio_url ?? undefined, subtitles: [], duration: 0 });
           setIsGeneratingVideo(false);
         } else {
           setVideoResponse(null);
@@ -301,6 +308,7 @@ export function useChat() {
       addMessage,
       setIsGeneratingVideo,
       setVideoResponse,
+      clearMessages,
     ]
   );
 
@@ -308,8 +316,14 @@ export function useChat() {
   const sendModeMessage = useCallback(
     async (text: string) => {
       if (!text.trim()) return;
+
+      // ✅ Fix #3: guard — if session is completed, refuse and prompt user
       if (!activeModeSession) {
-        toast.error('No active mode session. Please start a practice or review session.');
+        toast.error('No active session. Please start a new one.');
+        return;
+      }
+      if (activeModeSession.completed) {
+        toast('Session complete! Start a new session to continue.', { icon: '✅' });
         return;
       }
       if (!currentSessionId) return;
@@ -317,7 +331,7 @@ export function useChat() {
       const { modeSessionId, mode, currentStep, totalSteps } = activeModeSession;
 
       const userMsg: Message = {
-        id: uuidv4(),
+        id: newId(),
         sessionId: currentSessionId,
         role: 'user',
         content: text.trim(),
@@ -340,9 +354,8 @@ export function useChat() {
         const data = res.data;
 
         if (data.mode === 'practice') {
-          // ── PRACTICE response ────────────────────────────────────────────
           const evalMsg: Message = {
-            id: uuidv4(),
+            id: newId(),
             sessionId: currentSessionId,
             role: 'assistant',
             content: data.evaluation.feedback,
@@ -359,12 +372,11 @@ export function useChat() {
           addMessage(evalMsg);
 
           if (data.type === 'evaluation' && data.next_prompt) {
-            // More steps remain — add the next guided question
             const nextStep = currentStep + 1;
             updateActiveModeSession({ currentStep: nextStep });
 
             const nextMsg: Message = {
-              id: uuidv4(),
+              id: newId(),
               sessionId: currentSessionId,
               role: 'assistant',
               content: data.next_prompt,
@@ -379,15 +391,21 @@ export function useChat() {
             };
             addMessage(nextMsg);
 
-            const videoRes = deliveryToVideoResponse(data.next_delivery);
-            setVideoResponse(videoRes);
+            if (data.next_delivery?.response_format === 'video' && data.next_delivery.video_url) {
+              setVideoResponse({
+                videoUrl: data.next_delivery.video_url,
+                audioUrl: data.next_delivery.audio_url ?? undefined,
+                subtitles: [],
+                duration: 0,
+              });
+            }
           } else if (data.type === 'completed') {
-            // Scenario done
+            // ✅ Fix #3: mark completed so subsequent sends are blocked
             updateActiveModeSession({ completed: true });
             setActiveModeSession({ ...activeModeSession, completed: true });
 
             const completedMsg: Message = {
-              id: uuidv4(),
+              id: newId(),
               sessionId: currentSessionId,
               role: 'assistant',
               content: data.summary ?? 'Practice scenario completed!',
@@ -403,9 +421,8 @@ export function useChat() {
             toast.success('🎉 Practice scenario completed!');
           }
         } else if (data.mode === 'review') {
-          // ── REVIEW response (text-only) ───────────────────────────────────
           const evalMsg: Message = {
-            id: uuidv4(),
+            id: newId(),
             sessionId: currentSessionId,
             role: 'assistant',
             content: data.evaluation.feedback,
@@ -431,7 +448,7 @@ export function useChat() {
             });
 
             const nextMsg: Message = {
-              id: uuidv4(),
+              id: newId(),
               sessionId: currentSessionId,
               role: 'assistant',
               content: data.next_prompt,
@@ -446,6 +463,7 @@ export function useChat() {
             };
             addMessage(nextMsg);
           } else if (data.type === 'completed') {
+            // ✅ Fix #3: mark completed
             updateActiveModeSession({ completed: true });
             setActiveModeSession({ ...activeModeSession, completed: true });
             toast.success('🎓 Review session completed!');
@@ -475,7 +493,6 @@ export function useChat() {
   const switchMode = useCallback(
     async (newMode: TutorMode) => {
       if (!currentSessionId) return;
-
       const currentSession = sessions.find((s) => s.id === currentSessionId);
       if (currentSession?.currentMode === newMode) return;
 
@@ -484,22 +501,18 @@ export function useChat() {
         const res = await apiClient.switchSessionMode(currentSessionId, newMode);
         if (!res.success) throw new Error(res.error?.message);
 
-        // Clear messages for a clean slate in the new mode
         clearMessages();
-        // Clear active mode session when switching away from practice/review
         setActiveModeSession(null);
 
-        // If switching to review, enforce no-video
         updateSession(currentSessionId, {
           currentMode: newMode,
           prefersVideo: newMode === 'review' ? false : currentSession?.prefersVideo ?? false,
         });
 
-        // Toast notification for the new mode
         const modeToasts: Record<TutorMode, string> = {
           learn:    '📖 Learn mode. Ask me anything',
-          practice: '🔬 Practice mode. Ready when you start a session',
-          review:   '📋 Review mode. Text only',
+          practice: '🔬 Practice mode. Get hands-on experience',
+          review:   '📋 Review mode. Test your knowledge',
         };
         toast.success(modeToasts[newMode]);
       } catch (err) {
@@ -515,11 +528,7 @@ export function useChat() {
   // ── Video preference toggle ────────────────────────────────────────────────
   const toggleVideoPreference = useCallback(
     async (prefersVideo: boolean) => {
-      if (!currentSessionId) {
-        toast.error('No active session');
-        return;
-      }
-
+      if (!currentSessionId) { toast.error('No active session'); return; }
       try {
         const res = await apiClient.setVideoPreference(currentSessionId, prefersVideo);
         if (res.success) {
@@ -529,8 +538,7 @@ export function useChat() {
           throw new Error(res.error?.message ?? 'Failed to toggle video mode');
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to toggle video mode';
-        toast.error(message);
+        toast.error(err instanceof Error ? err.message : 'Failed to toggle video mode');
       }
     },
     [currentSessionId, updateSession]
@@ -542,6 +550,7 @@ export function useChat() {
     try {
       await apiClient.endModeSession(activeModeSession.modeSessionId);
       setActiveModeSession(null);
+      clearMessages(); // ✅ Fix #8: clear so UI is clean after ending
       if (currentSessionId) {
         await apiClient.switchSessionMode(currentSessionId, 'learn');
         updateSession(currentSessionId, { currentMode: 'learn' });
@@ -549,155 +558,71 @@ export function useChat() {
     } catch {
       // silent
     }
-  }, [activeModeSession, currentSessionId, setActiveModeSession, updateSession]);
+  }, [activeModeSession, currentSessionId, setActiveModeSession, clearMessages, updateSession]);
 
-  // ── Switch review question type mid-session ───────────────────────────────
-  // Ends the current review mode session silently and immediately starts a
-  // fresh one with the new type, keeping the same difficulty and chat session.
-  const switchReviewType = useCallback(
+  // ── Unified session type switcher (Fix #2 — replaces two near-identical fns)
+  // Works for both practice and review: ends the current mode session and
+  // immediately starts a fresh one with the new type, carrying over difficulty.
+  const switchSessionType = useCallback(
     async (newSessionType: string) => {
-      if (!activeModeSession || activeModeSession.mode !== 'review') return;
+      if (!activeModeSession) return;
       if (newSessionType === activeModeSession.sessionType) return;
       if (!currentSessionId) return;
+
+      const { mode, difficulty, totalSteps, modeSessionId } = activeModeSession;
 
       setIsStartingModeSession(true);
       setError(null);
 
       try {
-        // 1. End the current mode session on the backend (silent — no toast)
-        await apiClient.endModeSession(activeModeSession.modeSessionId);
+        // 1. End current session silently
+        await apiClient.endModeSession(modeSessionId);
 
-        // 2. Clear screen for clean slate
+        // 2. Clear screen
         clearMessages();
 
-        // 3. Start fresh with new type, carry over difficulty
+        // 3. Start fresh, carry over difficulty
         const res = await apiClient.startModeSession({
           session_id: currentSessionId,
-          mode: 'review',
+          mode,
           session_type: newSessionType,
-          difficulty: activeModeSession.difficulty as 'Basic' | 'Intermediate' | 'Advanced',
+          difficulty: difficulty as 'Basic' | 'Intermediate' | 'Advanced',
         });
 
         if (!res.success || !res.data) {
-          throw new Error(res.error?.message ?? 'Failed to switch question type');
+          throw new Error(res.error?.message ?? 'Failed to switch session type');
         }
 
         const { mode_session_id, prompt, response_format, video_url, audio_url } = res.data;
 
         const newActiveSess: ActiveModeSession = {
           modeSessionId: mode_session_id,
-          mode: 'review',
+          mode,
           sessionType: newSessionType,
-          difficulty: activeModeSession.difficulty,
+          difficulty,
           currentStep: 1,
-          totalSteps: activeModeSession.totalSteps,
+          totalSteps: mode === 'practice' ? 3 : totalSteps,
           completed: false,
         };
         setActiveModeSession(newActiveSess);
 
-        // Add the first question as a prompt message
-        const promptMsg: Message = {
-          id: crypto.randomUUID(),
-          sessionId: currentSessionId,
-          role: 'assistant',
-          content: prompt,
-          responseFormat: response_format,
-          videoUrl: video_url ?? null,
-          audioUrl: audio_url ?? null,
-          mode: 'review',
-          messageType: 'prompt',
-          step: 1,
-          totalSteps: activeModeSession.totalSteps,
-          timestamp: new Date(),
-        };
-        addMessage(promptMsg);
-        setVideoResponse(null);
-
-        // Find the label for the toast
-        const REVIEW_LABELS: Record<string, string> = {
-          mcq: 'Multiple Choice',
-          fill_blank: 'Fill in the Blank',
-          flashcard: 'Flashcard',
-          short_answer: 'Short Answer',
-        };
-        toast.success(`Switched to ${REVIEW_LABELS[newSessionType] ?? newSessionType}`);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to switch question type';
-        setError(message);
-        toast.error(message);
-      } finally {
-        setIsStartingModeSession(false);
-      }
-    },
-    [
-      activeModeSession,
-      currentSessionId,
-      clearMessages,
-      setActiveModeSession,
-      setIsStartingModeSession,
-      setError,
-      addMessage,
-      setVideoResponse,
-    ]
-  );
-
-  // ── Switch practice topic mid-session ─────────────────────────────────────
-  // Same logic as switchReviewType — ends current practice session silently
-  // and starts a fresh one with the new topic, keeping the same difficulty.
-  const switchPracticeType = useCallback(
-    async (newSessionType: string) => {
-      if (!activeModeSession || activeModeSession.mode !== 'practice') return;
-      if (newSessionType === activeModeSession.sessionType) return;
-      if (!currentSessionId) return;
-
-      setIsStartingModeSession(true);
-      setError(null);
-
-      try {
-        // 1. End current practice session silently
-        await apiClient.endModeSession(activeModeSession.modeSessionId);
-
-        // 2. Clear screen for clean slate
-        clearMessages();
-
-        // 3. Start fresh with new topic, carry over difficulty
-        const res = await apiClient.startModeSession({
-          session_id: currentSessionId,
-          mode: 'practice',
-          session_type: newSessionType,
-          difficulty: activeModeSession.difficulty as 'Basic' | 'Intermediate' | 'Advanced',
+        // ✅ Fix #6: update session title to reflect new type
+        updateSession(currentSessionId, {
+          title: getModeSessionTitle(mode, newSessionType),
         });
 
-        if (!res.success || !res.data) {
-          throw new Error(res.error?.message ?? 'Failed to switch practice topic');
-        }
-
-        const { mode_session_id, prompt, response_format, video_url, audio_url } = res.data;
-
-        const newActiveSess: ActiveModeSession = {
-          modeSessionId: mode_session_id,
-          mode: 'practice',
-          sessionType: newSessionType,
-          difficulty: activeModeSession.difficulty,
-          currentStep: 1,
-          totalSteps: 3,
-          completed: false,
-        };
-        setActiveModeSession(newActiveSess);
-
-        // Add the opening scenario as a prompt message
         const promptMsg: Message = {
-          id: crypto.randomUUID(),
+          id: newId(),
           sessionId: currentSessionId,
           role: 'assistant',
           content: prompt,
           responseFormat: response_format,
           videoUrl: video_url ?? null,
           audioUrl: audio_url ?? null,
-          mode: 'practice',
+          mode,
           messageType: 'prompt',
           step: 1,
-          totalSteps: 3,
+          totalSteps: mode === 'practice' ? 3 : totalSteps,
           timestamp: new Date(),
         };
         addMessage(promptMsg);
@@ -710,16 +635,10 @@ export function useChat() {
           setVideoResponse(null);
         }
 
-        const PRACTICE_LABELS: Record<string, string> = {
-          flotation_basics:  'Flotation Basics',
-          reagents:          'Reagents & Chemistry',
-          process_variables: 'Process Variables',
-          troubleshooting:   'Troubleshooting',
-          surface_chemistry: 'Surface Chemistry',
-        };
-        toast.success(`Switched to ${PRACTICE_LABELS[newSessionType] ?? newSessionType}`);
+        const labels = mode === 'practice' ? PRACTICE_LABELS : REVIEW_LABELS;
+        toast.success(`Switched to ${labels[newSessionType] ?? newSessionType}`);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to switch practice topic';
+        const message = err instanceof Error ? err.message : 'Failed to switch session type';
         setError(message);
         toast.error(message);
       } finally {
@@ -736,6 +655,7 @@ export function useChat() {
       setError,
       addMessage,
       setVideoResponse,
+      updateSession,
     ]
   );
 
@@ -757,11 +677,11 @@ export function useChat() {
     startNewSession,
     sendMessage,
     sendModeMessage,
+    retryLastMessage,   // ✅ Fix #5
     startModeSession,
     switchMode,
     endModeSession,
-    switchReviewType,
-    switchPracticeType,
+    switchSessionType,  // ✅ Fix #2 — unified, replaces switchReviewType + switchPracticeType
     toggleVideoPreference,
     setCurrentSession,
     deleteSession,

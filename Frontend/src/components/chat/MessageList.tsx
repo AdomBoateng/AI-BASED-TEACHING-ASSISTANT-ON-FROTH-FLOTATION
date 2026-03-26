@@ -5,29 +5,87 @@ import { useChatStore } from '@/store/chatStore';
 import { UserMessage } from './UserMessage';
 import { AIResponse } from './AIResponse';
 import { LoadingState } from './LoadingState';
-import { BookOpen } from 'lucide-react';
+import { useChat } from '@/hooks/use-chat';
+import { BookOpen, FlaskConical, ClipboardCheck, RotateCcw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+// ── Mode-aware empty state config ─────────────────────────────────────────────
+const EMPTY_STATE = {
+  learn: {
+    icon: BookOpen,
+    color: 'text-primary',
+    bg: 'bg-primary/10 ring-primary/20',
+    title: 'Ready to learn',
+    subtitle: 'Ask a question about froth flotation to get started.',
+  },
+  practice: {
+    icon: FlaskConical,
+    color: 'text-emerald-400',
+    bg: 'bg-emerald-500/10 ring-emerald-500/20',
+    title: 'Practice session starting…',
+    subtitle: 'Your guided scenario will appear here in a moment.',
+  },
+  review: {
+    icon: ClipboardCheck,
+    color: 'text-amber-400',
+    bg: 'bg-amber-500/10 ring-amber-500/20',
+    title: 'Review session starting…',
+    subtitle: 'Your first question will appear here in a moment.',
+  },
+};
 
 export function MessageList() {
   const messages = useChatStore((s) => s.messages);
   const isLoadingMessage = useChatStore((s) => s.isLoadingMessage);
+  const error = useChatStore((s) => s.error);
+  const currentSessionId = useChatStore((s) => s.currentSessionId);
+  const sessions = useChatStore((s) => s.sessions);
+  const activeModeSession = useChatStore((s) => s.activeModeSession);
+
+  const { retryLastMessage } = useChat();
+
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const currentSession = sessions.find((s) => s.id === currentSessionId);
+  const currentMode = currentSession?.currentMode ?? 'learn';
+  const inModeSession = !!activeModeSession && !activeModeSession.completed;
+
+  // Determine effective mode for empty state
+  const emptyMode =
+    inModeSession ? activeModeSession.mode :
+    currentMode === 'practice' ? 'practice' :
+    currentMode === 'review' ? 'review' :
+    'learn';
+
+  const emptyConfig = EMPTY_STATE[emptyMode];
+  const EmptyIcon = emptyConfig.icon;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoadingMessage]);
 
+  // ── Show last user message + retry when there's an error and no AI response ─
+  const lastMessage = messages[messages.length - 1];
+  const showRetry =
+    !!error &&
+    !isLoadingMessage &&
+    !!lastMessage &&
+    lastMessage.role === 'user' &&
+    currentMode === 'learn';
+
   if (messages.length === 0) {
     return (
-      // min-h-0 prevents this from busting out of the flex column
       <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-4 p-6 text-center">
-        <div className="flex h-14 w-14 items-center justify-center p-5 rounded-2xl bg-primary/10 ring-1 ring-primary/20">
-          <BookOpen className="h-7 w-7 text-primary" />
+        <div className={cn(
+          'flex h-14 w-14 items-center justify-center p-5 rounded-2xl ring-1',
+          emptyConfig.bg
+        )}>
+          <EmptyIcon className={cn('h-7 w-7', emptyConfig.color)} />
         </div>
         <div>
-          <p className="text-base font-medium text-foreground">Ready to learn</p>
-          <p className="mt-1 text-sm text-muted-foreground max-w-xs">
-            Ask a question about froth flotation to get started.
-          </p>
+          <p className="text-base font-medium text-foreground">{emptyConfig.title}</p>
+          <p className="mt-1 text-sm text-muted-foreground max-w-xs">{emptyConfig.subtitle}</p>
         </div>
       </div>
     );
@@ -49,6 +107,22 @@ export function MessageList() {
         {isLoadingMessage && (
           <div className="animate-in fade-in duration-200">
             <LoadingState />
+          </div>
+        )}
+
+        {/* ✅ Fix #5: Retry button when last message errored */}
+        {showRetry && (
+          <div className="animate-in fade-in duration-200 flex flex-col items-start gap-2">
+            <p className="text-xs text-destructive/80 pl-1">{error}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={retryLastMessage}
+              className="flex items-center gap-2 text-xs h-8"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Retry
+            </Button>
           </div>
         )}
 
