@@ -150,6 +150,17 @@ class ApiClient {
     );
   }
 
+  async resetPassword(token: string, newPassword: string) {
+    return this.request<{ status: string; message: string }>(
+      API_ENDPOINTS.AUTH_RESET_PASSWORD,
+      {
+        method: 'POST',
+        body: JSON.stringify({ token, password: newPassword }),
+        skipAuth: true,
+      }
+    );
+  }
+
   logout() {
     tokenStore.clear();
   }

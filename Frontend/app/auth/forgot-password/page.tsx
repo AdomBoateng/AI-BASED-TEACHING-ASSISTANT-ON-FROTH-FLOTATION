@@ -3,7 +3,7 @@ import { ForgotPasswordForm } from '@/components/auth/ForgotPasswordForm';
 import { ThemeToggle } from '@/components/common/ThemeToggle';
 
 export const metadata = {
-  title: 'Reset password — Meraki',
+  title: 'Forgot Password — Meraki',
   description: 'Request a password reset link for your Meraki account.',
 };
 
@@ -28,7 +28,7 @@ export default function ForgotPasswordPage() {
         {/* Heading */}
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-foreground tracking-tight">
-            Reset your password
+            Did you forget your password?
           </h2>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Enter your email and we&apos;ll send you a reset link.
