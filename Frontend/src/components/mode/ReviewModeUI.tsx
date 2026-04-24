@@ -60,7 +60,7 @@ export function ReviewEvalCard({
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Icon className={cn('h-4 w-4', meta.color)} />
-          <span className={cn('text-sm font-semibold', meta.color)}>{meta.label}</span>
+          <span className={cn('text-base font-semibold', meta.color)}>{meta.label}</span>
           {evaluation.rubric_level && (
             <span className={cn('text-xs font-medium', rubricColor)}>
               · {evaluation.rubric_level}
@@ -89,27 +89,27 @@ export function ReviewEvalCard({
       </div>
 
       {/* Feedback */}
-      <p className="text-sm text-foreground leading-relaxed">{evaluation.feedback}</p>
+      <p className="text-base text-foreground leading-relaxed">{evaluation.feedback}</p>
 
       {/* Correct answer — shown for MCQ / fill_blank when backend provides it */}
       {evaluation.correct_answer && (
         <div className="rounded-lg bg-background/50 border border-border/40 px-3 py-2">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">
+          <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">
             Correct Answer
           </p>
-          <p className="text-sm text-foreground font-medium">{evaluation.correct_answer}</p>
+          <p className="text-base text-foreground font-medium">{evaluation.correct_answer}</p>
         </div>
       )}
 
       {/* Missing points */}
       {evaluation.missing_points?.length > 0 && (
         <div>
-          <p className="mb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          <p className="mb-1 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
             Missing Points
           </p>
           <ul className="space-y-1">
             {evaluation.missing_points.map((pt, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+              <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
                 <span className="mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-muted-foreground/50" />
                 {pt}
               </li>
@@ -121,8 +121,8 @@ export function ReviewEvalCard({
       {/* Next difficulty indicator */}
       {nextDifficulty && (
         <div className="flex items-center gap-1.5 pt-1 border-t border-border/30">
-          <span className="text-xs text-muted-foreground">Next question difficulty:</span>
-          <span className="text-xs font-semibold text-foreground">{nextDifficulty}</span>
+          <span className="text-sm text-muted-foreground">Next question difficulty:</span>
+          <span className="text-sm font-semibold text-foreground">{nextDifficulty}</span>
         </div>
       )}
     </div>
@@ -140,9 +140,9 @@ export function ReviewCompletedCard({ totalSteps }: ReviewCompletedCardProps) {
     <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 ring-1 ring-amber-500/20 p-4 space-y-2">
       <div className="flex items-center gap-2">
         <Trophy className="h-4 w-4 text-amber-400" />
-        <span className="text-sm font-semibold text-amber-400">Review Complete 🎓</span>
+        <span className="text-base font-semibold text-amber-400">Review Complete 🎓</span>
       </div>
-      <p className="text-sm text-foreground leading-relaxed">
+      <p className="text-base text-foreground leading-relaxed">
         You completed all {totalSteps} questions. Great work!
       </p>
     </div>

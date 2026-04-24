@@ -104,17 +104,48 @@ export function AIResponse({ message }: AIResponseProps) {
             )}
 
             {/* Mode prompt (scenario / question text) — tinted bubble */}
-            {isModePrompt && (
-              <div className={
-                message.mode === 'practice'
-                  ? 'rounded-xl bg-emerald-500/5 border border-emerald-500/20 px-4 py-3 shadow-sm'
-                  : message.mode === 'review'
-                  ? 'rounded-xl bg-amber-500/5 border border-amber-500/20 px-4 py-3 shadow-sm'
-                  : 'rounded-xl bg-card border border-border/30 px-4 py-3 shadow-sm'
-              }>
-                <MarkdownRenderer content={message.content} />
-              </div>
-            )}
+            {isModePrompt && (() => {
+              // For review mode, parse out MCQ options and render them cleanly one-per-line
+              if (message.mode === 'review') {
+                const lines = message.content.split('\n');
+                const optionRegex = /^\*{0,2}([A-D])[.)]\*{0,2}\s+(.+)/i;
+                const questionLines: string[] = [];
+                const optionLines: { letter: string; text: string }[] = [];
+                for (const line of lines) {
+                  const match = line.trim().match(optionRegex);
+                  if (match) {
+                    optionLines.push({ letter: match[1].toUpperCase(), text: match[2].trim() });
+                  } else {
+                    if (optionLines.length === 0) questionLines.push(line);
+                  }
+                }
+                const hasOptions = optionLines.length > 0;
+                return (
+                  <div className="rounded-xl bg-amber-500/5 border border-amber-500/20 px-4 py-3 shadow-sm space-y-3">
+                    <MarkdownRenderer content={questionLines.join('\n').trim()} />
+                    {hasOptions && (
+                      <div className="flex flex-col gap-2 pt-1 border-t border-amber-500/10">
+                        {optionLines.map(({ letter, text }) => (
+                          <div key={letter} className="flex items-start gap-2 text-sm text-foreground/90">
+                            <span className="font-bold text-amber-400/80 flex-shrink-0 w-5">{letter}.</span>
+                            <span>{text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              return (
+                <div className={
+                  message.mode === 'practice'
+                    ? 'rounded-xl bg-emerald-500/5 border border-emerald-500/20 px-4 py-3 shadow-sm'
+                    : 'rounded-xl bg-card border border-border/30 px-4 py-3 shadow-sm'
+                }>
+                  <MarkdownRenderer content={message.content} />
+                </div>
+              );
+            })()}
           </>
         ) : (
           // ── Standard text response (learn mode) ────────────────────────

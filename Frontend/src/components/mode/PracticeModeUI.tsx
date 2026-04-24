@@ -68,17 +68,17 @@ export function PracticeEvalCard({ evaluation, step, totalSteps }: PracticeEvalC
       </div>
 
       {/* Feedback */}
-      <p className="text-sm text-foreground leading-relaxed">{evaluation.feedback}</p>
+      <p className="text-base text-foreground leading-relaxed">{evaluation.feedback}</p>
 
       {/* Missing points */}
       {evaluation.missing_points?.length > 0 && (
         <div>
-          <p className="mb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          <p className="mb-1 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
             Missing Points
           </p>
           <ul className="space-y-1">
             {evaluation.missing_points.map((pt, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+              <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
                 <span className="mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-muted-foreground/50" />
                 {pt}
               </li>

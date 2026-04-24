@@ -69,10 +69,6 @@ export function ChatContainer() {
       startNewSession(undefined, 'learn');
       return;
     }
-    // ✅ FIX: Open modal ONLY. Do NOT create a session here.
-    // The session is created inside startModeSession when the user confirms.
-    // This prevents the "Practice session starting..." ghost state when
-    // the user cancels the modal without selecting anything.
     setModeSelectorTarget(mode);
   };
 
@@ -81,18 +77,14 @@ export function ChatContainer() {
     sessionType: string,
     difficulty: 'Basic' | 'Intermediate' | 'Advanced'
   ) => {
-    // startModeSession already handles creating the chat session if needed
     await startModeSession(mode, sessionType, difficulty);
     setModeSelectorTarget(null);
   };
 
   const handleModalClose = () => {
-    // ✅ FIX: Simply close the modal — no session was created yet, so nothing
-    // to clean up. The welcome screen stays as-is.
     setModeSelectorTarget(null);
   };
 
-  // Modal rendered at top level — survives all re-renders
   const modeModal = modeSelectorTarget ? (
     <ModeSelector
       mode={modeSelectorTarget}
@@ -141,7 +133,7 @@ export function ChatContainer() {
 
             {/* Quick starts */}
             <div className="mt-8">
-              <p className="mb-3 text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
+              <p className="mb-3 text-base font-medium text-muted-foreground/70 uppercase tracking-wider">
                 Quick starts
               </p>
               <div className="flex flex-col gap-2">
@@ -150,7 +142,7 @@ export function ChatContainer() {
                     key={q}
                     onClick={() => handleQuickStart(q)}
                     disabled={!!clickedQuickStart}
-                    className="flex items-center gap-3 w-full text-left rounded-lg border border-border/40 bg-card/50 px-4 py-3 text-xs text-muted-foreground hover:border-primary/30 hover:bg-primary/5 hover:text-foreground transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex items-center gap-3 w-full text-left rounded-lg border border-border/40 bg-card/50 px-4 py-3 text-sm text-muted-foreground hover:border-primary/30 hover:bg-primary/5 hover:text-foreground transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {clickedQuickStart === q ? (
                       <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-primary" />

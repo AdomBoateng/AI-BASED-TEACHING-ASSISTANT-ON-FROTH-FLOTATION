@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Send, Loader2, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { useChat } from '@/hooks/use-chat';
@@ -8,6 +8,21 @@ import { useChatStore } from '@/store/chatStore';
 import { VoiceInput } from './VoiceInput';
 import { REVIEW_SESSION_TYPES, PRACTICE_SESSION_TYPES } from '@/lib/constants';
 import { cn } from '@/lib/utils';
+
+// Parse MCQ options (A, B, C, D) from a prompt message string
+function parseMcqOptions(content: string): { letter: string; text: string }[] {
+  const lines = content.split('\n');
+  const options: { letter: string; text: string }[] = [];
+  // Match lines like "A. text", "A) text", "**A.** text", "**A)** text"
+  const optionRegex = /^\*{0,2}([A-D])[.)]\*{0,2}\s+(.+)/i;
+  for (const line of lines) {
+    const match = line.trim().match(optionRegex);
+    if (match) {
+      options.push({ letter: match[1].toUpperCase(), text: match[2].trim() });
+    }
+  }
+  return options;
+}
 
 // Human-readable labels for both modes
 const TYPE_LABELS: Record<string, string> = {
@@ -45,6 +60,7 @@ const PILL_STYLES = {
 export function InputArea() {
   const [message, setMessage] = useState('');
   const [showTypeSwitcher, setShowTypeSwitcher] = useState(false);
+  const [selectedMcqOption, setSelectedMcqOption] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const {
@@ -58,6 +74,7 @@ export function InputArea() {
 
   const currentSessionId = useChatStore((s) => s.currentSessionId);
   const sessions = useChatStore((s) => s.sessions);
+  const messages = useChatStore((s) => s.messages);
   const currentSession = sessions.find((s) => s.id === currentSessionId);
   const currentMode = currentSession?.currentMode ?? 'learn';
 
@@ -68,6 +85,23 @@ export function InputArea() {
   const showPill       = isPractice || isReview;
   const isSwitching    = isStartingModeSession;
 
+  // Detect if we're in an active MCQ review session and parse the options
+  const isMcqReview = inModeSession && isReview && activeModeSession?.sessionType === 'mcq';
+  const mcqOptions = useMemo(() => {
+    if (!isMcqReview) return [];
+    // Find the last assistant 'prompt' message to extract options from
+    const lastPrompt = [...messages].reverse().find(
+      (m) => m.role === 'assistant' && m.messageType === 'prompt' && m.mode === 'review'
+    );
+    if (!lastPrompt) return [];
+    return parseMcqOptions(lastPrompt.content);
+  }, [isMcqReview, messages]);
+
+  // Reset selected option whenever a new MCQ prompt arrives
+  useEffect(() => {
+    setSelectedMcqOption(null);
+  }, [mcqOptions]);
+
   // Which list to show in the dropdown
   const sessionTypes = isPractice ? PRACTICE_SESSION_TYPES : REVIEW_SESSION_TYPES;
   const pillStyles   = isPractice ? PILL_STYLES.practice : PILL_STYLES.review;
@@ -76,10 +110,20 @@ export function InputArea() {
     isPractice
       ? 'Type your answer to the guided question…'
       : isReview
-      ? 'Type your answer…'
+      ? isMcqReview
+        ? 'Select an option above…'
+        : 'Type your answer…'
       : 'Ask anything about froth flotation…';
 
   const handleSend = async () => {
+    // MCQ mode: send the selected option letter
+    if (isMcqReview && mcqOptions.length > 0) {
+      if (!selectedMcqOption || isLoadingMessage) return;
+      const answer = selectedMcqOption;
+      setSelectedMcqOption(null);
+      await sendModeMessage(answer);
+      return;
+    }
     const text = message.trim();
     if (!text || isLoadingMessage) return;
     setMessage('');
@@ -241,6 +285,57 @@ export function InputArea() {
           </div>
         )}
 
+        {/* MCQ Radio Button Options */}
+        {isMcqReview && mcqOptions.length > 0 && (
+          <div className="mb-3 flex flex-col gap-2">
+            {mcqOptions.map(({ letter, text }) => {
+              const isSelected = selectedMcqOption === letter;
+              return (
+                <button
+                  key={letter}
+                  disabled={isLoadingMessage || isSwitching}
+                  onClick={() => setSelectedMcqOption(letter)}
+                  className={cn(
+                    'flex items-center gap-3 w-full rounded-xl border px-4 py-3 text-left transition-all',
+                    'text-sm font-medium',
+                    isSelected
+                      ? 'border-amber-500/60 bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30'
+                      : 'border-border bg-card hover:border-amber-500/30 hover:bg-amber-500/5 text-foreground',
+                    'disabled:opacity-50 disabled:cursor-not-allowed'
+                  )}
+                >
+                  {/* Radio circle */}
+                  <span className={cn(
+                    'flex-shrink-0 h-4 w-4 rounded-full border-2 flex items-center justify-center transition-all',
+                    isSelected ? 'border-amber-400 bg-amber-400' : 'border-muted-foreground/40'
+                  )}>
+                    {isSelected && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-background" />
+                    )}
+                  </span>
+                  <span className="font-semibold text-amber-400/80 flex-shrink-0 w-5">{letter}.</span>
+                  <span>{text}</span>
+                </button>
+              );
+            })}
+
+            {/* Submit selected answer */}
+            <Button
+              onClick={handleSend}
+              disabled={!selectedMcqOption || isLoadingMessage || isSwitching}
+              className="mt-1 w-full h-10 rounded-xl font-semibold"
+            >
+              {isLoadingMessage ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Submitting…</>
+              ) : (
+                <><Send className="h-4 w-4 mr-2" /> Submit Answer</>
+              )}
+            </Button>
+          </div>
+        )}
+
+        {/* Normal text input — hidden for MCQ */}
+        {!(isMcqReview && mcqOptions.length > 0) && (
         <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 shadow-sm focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
           <VoiceInput onRecordingComplete={handleVoiceTranscript} />
 
@@ -253,7 +348,7 @@ export function InputArea() {
             disabled={isLoadingMessage || isSwitching || activeModeSession?.completed}
             rows={1}
             className="
-              flex-1 resize-none bg-transparent text-sm text-foreground
+              flex-1 resize-none bg-transparent text-base text-foreground
               placeholder:text-muted-foreground/60
               border-0 outline-none ring-0 shadow-none
               leading-6 py-1 px-2
@@ -275,6 +370,7 @@ export function InputArea() {
             )}
           </Button>
         </div>
+        )}
 
         <p className="mt-1.5 text-center text-[11px] text-muted-foreground/50">
           Press Enter to send · Shift+Enter for new line
